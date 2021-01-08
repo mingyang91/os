@@ -14,6 +14,7 @@ env:
 	cargo install cargo-binutils
 	rustup component add llvm-tools-preview rustfmt
 	rustup target add $(target)
+	pip3 install kflash
 
 kernel:
 	cargo build
@@ -37,3 +38,8 @@ qemu: build
 		-device loader,file=$(bin),addr=0x80200000
 
 run: build qemu
+
+flash:
+	kflash -p /dev/cu.usbserial-615648CD930 ${bin}
+
+board-run: build flash

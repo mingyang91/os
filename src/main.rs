@@ -29,7 +29,8 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle] // don't mangle the name of this function
 pub extern "C" fn rust_main() -> ! {
-    console_putstr("Hello World!\n");
     // this function is the entry point, since the linker looks for a function named `_start` by default
-    loop {}
+    loop {
+        console_putstr("Hello World!\n");
+    }
 }

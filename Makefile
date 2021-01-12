@@ -2,8 +2,10 @@
 
 target := riscv64gc-unknown-none-elf
 mode := debug
-kernel := target/$(target)/$(mode)/os
-bin := target/$(target)/$(mode)/kernel.bin
+KERNEL_ELF := target/$(target)/$(mode)/os
+KERNEL_BIN := ${KERNEL_ELF}.bin
+BOOTLOADER := tools/bootloader/rustsbi-k210.bin
+K210-SERIALPORT ?= /dev/cu.usbserial-615648CD930
 
 objdump := rust-objdump --arch-name=riscv64
 objcopy := rust-objcopy --binary-architecture=riscv64
@@ -19,13 +21,13 @@ env:
 kernel:
 	cargo build
 
-$(bin): kernel
-	$(objcopy) $(kernel) --strip-all -O binary $@
+$(KERNEL_BIN): kernel
+	$(objcopy) $(KERNEL_ELF) --strip-all -O binary $@
 
 asm:
-	$(objdump) -d $(kernel) | less
+	$(objdump) -d $(KERNEL_ELF) | less
 
-build: $(bin)
+build: $(KERNEL_BIN)
 
 clean:
 	cargo clean
@@ -35,11 +37,16 @@ qemu: build
 		-machine virt \
 		-nographic \
 		-bios default \
-		-device loader,file=$(bin),addr=0x80200000
+		-device loader,file=$(KERNEL_BIN),addr=0x80200000
 
 run: build qemu
 
 flash:
-	kflash -p /dev/cu.usbserial-615648CD930 ${bin}
+	@cp $(BOOTLOADER) $(BOOTLOADER).copy
+	@dd if=$(KERNEL_BIN) of=$(BOOTLOADER).copy bs=128k seek=1
+	@mv $(BOOTLOADER).copy $(KERNEL_BIN)
+	@sudo chmod 777 $(K210-SERIALPORT)
+	kflash -p $(K210-SERIALPORT) -b 1500000 $(KERNEL_BIN)
+	python -m serial.tools.miniterm --eol LF --dtr 0 --rts 0 --filter direct $(K210-SERIALPORT) 115200
 
 board-run: build flash

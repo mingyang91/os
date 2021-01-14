@@ -11,6 +11,7 @@
 mod sbi;
 mod lang_items;
 mod console;
+mod interrupt;
 
 
 global_asm!(include_str!("boot/entry64.asm"));
@@ -20,6 +21,12 @@ global_asm!(include_str!("boot/entry64.asm"));
 pub extern "C" fn rust_main() -> ! {
     reset_handler();
     println!("Hello World!");
+
+    interrupt::init();
+
+    unsafe {
+        llvm_asm!("ebreak"::::"volatile");
+    }
 
     panic!("Shutdown machine!");
 }

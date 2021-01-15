@@ -19,8 +19,8 @@ global_asm!(include_str!("boot/entry64.asm"));
 
 #[no_mangle] // don't mangle the name of this function
 pub extern "C" fn rust_main() -> ! {
-    println!("Hello World!");
     reset_handler();
+    println!("Hello World!");
 
     interrupt::init();
 
@@ -32,11 +32,11 @@ pub extern "C" fn rust_main() -> ! {
 
 fn reset_handler() {
     extern "C" {
-        fn sbss() -> usize;
-        fn ebss() -> usize;
+        static mut sbss: usize;
+        static mut ebss: usize;
     }
     unsafe {
-        (sbss()..ebss()).for_each(|a| {
+        (sbss..ebss).for_each(|a| {
             (a as *mut u8).write_volatile(0)
         });
     }

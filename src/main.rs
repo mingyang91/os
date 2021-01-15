@@ -8,6 +8,7 @@
 #![feature(panic_info_message)]
 
 use core::ptr::write_volatile;
+use core::mem::zeroed;
 
 #[macro_use]
 mod console;
@@ -34,12 +35,12 @@ pub extern "C" fn rust_main() -> ! {
 
 fn reset_handler() {
     extern "C" {
-        fn sbss() -> usize;
-        fn ebss() -> usize;
+        fn sbss();
+        fn ebss();
     }
     unsafe {
-        for ptr in sbss()..ebss() {
-            write_volatile(ptr as *mut usize, 0)
+        for ptr in sbss as usize..ebss as usize {
+            write_volatile(ptr as *mut usize, zeroed());
         }
     }
 

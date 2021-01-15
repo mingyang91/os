@@ -7,6 +7,8 @@
 #![feature(llvm_asm)]
 #![feature(panic_info_message)]
 
+use core::ptr::write_volatile;
+
 #[macro_use]
 mod console;
 mod sbi;
@@ -32,13 +34,13 @@ pub extern "C" fn rust_main() -> ! {
 
 fn reset_handler() {
     extern "C" {
-        static mut sbss: usize;
-        static mut ebss: usize;
+        fn sbss() -> usize;
+        fn ebss() -> usize;
     }
     unsafe {
-        (sbss..ebss).for_each(|a| {
-            (a as *mut u8).write_volatile(0)
-        });
+        for ptr in sbss()..ebss() {
+            write_volatile(ptr as *mut usize, 0)
+        }
     }
 
 }

@@ -7,10 +7,10 @@
 #![feature(llvm_asm)]
 #![feature(panic_info_message)]
 
-
+#[macro_use]
+mod console;
 mod sbi;
 mod lang_items;
-mod console;
 mod interrupt;
 
 
@@ -24,11 +24,9 @@ pub extern "C" fn rust_main() -> ! {
 
     interrupt::init();
 
-    unsafe {
-        llvm_asm!("ebreak"::::"volatile");
-    }
+    unsafe { llvm_asm!("ebreak"::::"volatile"); }
 
-    panic!("Shutdown machine!");
+    loop {}
 }
 
 

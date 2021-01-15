@@ -28,6 +28,10 @@ fn sbi_call(which: SBI, arg0: usize, arg1: usize, arg2: usize) -> usize {
     ret
 }
 
+pub fn set_timer(time: usize) {
+    sbi_call(SBI::SetTimer, time, 0, 0);
+}
+
 /// 向控制台输出一个字符
 ///
 /// 需要注意我们不能直接使用 Rust 中的 char 类型

@@ -36,7 +36,7 @@ qemu: build
 	qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
-		-bios default \
+		-bios tools/bootloader/rustsbi-qemu.bin \
 		-device loader,file=$(KERNEL_BIN),addr=0x80200000
 
 run: build qemu

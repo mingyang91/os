@@ -1,10 +1,11 @@
 # Makefile
 
 target := riscv64gc-unknown-none-elf
-mode := debug
+mode := release
 KERNEL_ELF := target/$(target)/$(mode)/os
 KERNEL_BIN := ${KERNEL_ELF}.bin
-BOOTLOADER := tools/bootloader/rustsbi-k210.bin
+KERNEL_ENTRY_PA := 0x80020000
+BOOTLOADER := tools/bootloader/rustsbi-qemu.bin
 K210-SERIALPORT ?= /dev/cu.usbserial-615648CD930
 
 objdump := rust-objdump --arch-name=riscv64
@@ -36,18 +37,11 @@ qemu: build
 	qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
-		-bios tools/bootloader/rustsbi-qemu.bin \
-		-device loader,file=$(KERNEL_BIN),addr=0x80200000
+		-bios $(BOOTLOADER) \
+		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
 
 run: build qemu
 
-wsl: build
-	qemu-system-riscv64 \
-		-machine virt \
-		-m 256M \
-		-nographic \
-		-bios tools/bootloader/opensbi0.7-qemu.bin \
-		-device loader,file=$(KERNEL_BIN),addr=0x80200000
 
 flash:
 	@cp $(BOOTLOADER) $(BOOTLOADER).copy

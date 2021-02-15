@@ -2,12 +2,14 @@ mod context;
 
 use riscv::register::{
     scause::{
+        self,
         Scause,
         Trap,
         Exception
     },
     stvec,
     mtvec::TrapMode,
+    stval,
 };
 use crate::syscall::{syscall, SYSCALL};
 use crate::batch::run_next_app;
@@ -24,13 +26,15 @@ pub fn init() {
 }
 
 #[no_mangle]
-pub fn trap_handler(context: &mut TrapContext, scause: Scause, stval: usize) -> &mut TrapContext {
+pub fn trap_handler(ctx: &mut TrapContext) -> &mut TrapContext {
+    let scause = scause::read();
+    let stval = stval::read();
     match scause.cause() {
-        Trap::Exception(Exception::Breakpoint) => breakpoint(context),
+        Trap::Exception(Exception::Breakpoint) => breakpoint(ctx),
         Trap::Exception(Exception::UserEnvCall) => {
-            context.sepc += 4;
-            let id = SYSCALL::try_from(context.x[17]);
-            context.x[10] = syscall(id, [context.x[10], context.x[11], context.x[12]]) as usize;
+            ctx.sepc += 4;
+            let id = SYSCALL::try_from(ctx.x[17]);
+            ctx.x[10] = syscall(id, [ctx.x[10], ctx.x[11], ctx.x[12]]) as usize;
         },
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
@@ -41,9 +45,9 @@ pub fn trap_handler(context: &mut TrapContext, scause: Scause, stval: usize) -> 
             println!("[kernel] IllegalInstruction in application, core dumped.");
             run_next_app();
         },
-        _ => fault(context, scause, stval),
+        _ => fault(ctx, scause, stval),
     }
-    context
+    ctx
 }
 
 
@@ -54,7 +58,7 @@ fn breakpoint(context: &mut TrapContext) {
 
 fn fault(context: &mut TrapContext, scause: Scause, stval: usize) {
     panic!(
-        "Unresolved interrupt: {:?}\n{:x?}\nstval: {:x}",
+        "Unresolved interrupt: {:?}\n{:?}\nstval: {:x}",// {:?}
         scause.cause(),
         context,
         stval

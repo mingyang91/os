@@ -9,8 +9,14 @@ BINS := $(patsubst $(APP_DIR)/%.rs, $(TARGET_DIR)/%.bin, $(APPS))
 OBJDUMP := rust-objdump --arch-name=riscv64
 OBJCOPY := rust-objcopy --binary-architecture=riscv64
 
+ifeq ($(MODE), release)
+	MODE_ARGS := --release
+else ifeq ($(BOARD), k210)
+	MODE_ARGS := 
+endif
+
 elf:
-	@cargo build --release
+	@cargo build $(MODE_ARGS)
 	@echo $(APPS)
 	@echo $(ELFS)
 	@echo $(BINS)

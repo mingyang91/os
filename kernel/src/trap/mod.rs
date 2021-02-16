@@ -58,7 +58,7 @@ fn breakpoint(context: &mut TrapContext) {
 
 fn fault(context: &mut TrapContext, scause: Scause, stval: usize) {
     panic!(
-        "Unresolved interrupt: {:?}\n{:?}\nstval: {:x}",// {:?}
+        "Unresolved trap: {:?}\n{:?}\nstval: {:#x}",// {:?}
         scause.cause(),
         context,
         stval

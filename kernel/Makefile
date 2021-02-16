@@ -1,54 +1,96 @@
-# Makefile
+# Building
+TARGET := riscv64gc-unknown-none-elf
+MODE := release
+KERNEL_ELF := target/$(TARGET)/$(MODE)/os
+KERNEL_BIN := $(KERNEL_ELF).bin
+DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 
-target := riscv64gc-unknown-none-elf
-mode := release
-KERNEL_ELF := target/$(target)/$(mode)/os
-KERNEL_BIN := ${KERNEL_ELF}.bin
-KERNEL_ENTRY_PA := 0x80020000
-BOOTLOADER := tools/bootloader/rustsbi-qemu.bin
-K210-SERIALPORT ?= /dev/cu.usbserial-615648CD930
+# BOARD
+BOARD ?= qemu
+SBI ?= rustsbi
+BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
+K210_BOOTLOADER_SIZE := 131072
 
-objdump := rust-objdump --arch-name=riscv64
-objcopy := rust-objcopy --binary-architecture=riscv64
+# KERNEL ENTRY
+ifeq ($(BOARD), qemu)
+	KERNEL_ENTRY_PA := 0x80200000
+else ifeq ($(BOARD), k210)
+	KERNEL_ENTRY_PA := 0x80020000
+endif
 
-.PHONY: kernel build clean qemu run env
+
+ifeq ($(MODE), release)
+	MODE_ARGS := --release
+else ifeq ($(BOARD), k210)
+	MODE_ARGS := 
+endif
+
+
+# Run K210
+K210-SERIALPORT	= /dev/ttyUSB0
+K210-BURNER = ../tools/kflash.py
+
+# Binutils
+OBJDUMP := rust-objdump --arch-name=riscv64
+OBJCOPY := rust-objcopy --binary-architecture=riscv64
+
+# Disassembly
+DISASM ?= -x
+
+build: env $(KERNEL_BIN)
 
 env:
+	(rustup target list | grep "$(TARGET) (installed)") || rustup target add $(TARGET)
 	cargo install cargo-binutils
-	rustup component add llvm-tools-preview rustfmt
-	rustup target add $(target)
-	pip3 install kflash
-
-kernel:
-	cargo build
+	rustup component add rust-src
+	rustup component add llvm-tools-preview
 
 $(KERNEL_BIN): kernel
-	$(objcopy) $(KERNEL_ELF) --strip-all -O binary $@
+	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
-asm:
-	$(objdump) -d $(KERNEL_ELF) | less
-
-build: $(KERNEL_BIN)
+kernel:
+	@cd ../user && make build MODE=$(MODE)
+	@echo Platform: $(BOARD)
+	@cp src/linker-$(BOARD).ld src/linker.ld
+	@cargo build $(MODE_ARGS) --features "board_$(BOARD)"
+	@rm src/linker.ld
 
 clean:
-	cargo clean
+	@cargo clean
 
-qemu: build
-	qemu-system-riscv64 \
+disasm: kernel
+	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) | less
+
+disasm-vim: kernel
+	@$(OBJDUMP) $(DISASM) $(KERNEL_ELF) > $(DISASM_TMP)
+	@vim $(DISASM_TMP)
+	@rm $(DISASM_TMP)
+
+run: tools run-inner
+
+tools:
+	(which $(K210-BURNER)) || (cd .. && git clone https://github.com/sipeed/kflash.py.git && mv kflash.py tools)
+
+run-inner: build
+ifeq ($(BOARD),qemu)
+	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
 		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
-
-run: build qemu
-
-
-flash:
+else
 	@cp $(BOOTLOADER) $(BOOTLOADER).copy
-	@dd if=$(KERNEL_BIN) of=$(BOOTLOADER).copy bs=128k seek=1
+	@dd if=$(KERNEL_BIN) of=$(BOOTLOADER).copy bs=$(K210_BOOTLOADER_SIZE) seek=1
 	@mv $(BOOTLOADER).copy $(KERNEL_BIN)
 	@sudo chmod 777 $(K210-SERIALPORT)
-	kflash -p $(K210-SERIALPORT) -b 1500000 $(KERNEL_BIN)
-	python -m serial.tools.miniterm --eol LF --dtr 0 --rts 0 --filter direct $(K210-SERIALPORT) 115200
+	python3 $(K210-BURNER) -p $(K210-SERIALPORT) -b 1500000 $(KERNEL_BIN)
+	python3 -m serial.tools.miniterm --eol LF --dtr 0 --rts 0 --filter direct $(K210-SERIALPORT) 115200
+endif
 
-board-run: build flash
+debug: build
+	@tmux new-session -d \
+		"qemu-system-riscv64 -machine virt -nographic -bios $(BOOTLOADER) -device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA) -s -S" && \
+		tmux split-window -h "riscv64-unknown-elf-gdb -ex 'file $(KERNEL_ELF)' -ex 'set arch riscv:rv64' -ex 'target remote localhost:1234'" && \
+		tmux -2 attach-session -d
+
+.PHONY: build env kernel clean disasm disasm-vim run-inner tools

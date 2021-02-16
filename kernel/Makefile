@@ -27,7 +27,7 @@ endif
 
 
 # Run K210
-K210-SERIALPORT	= /dev/ttyUSB0
+K210-SERIALPORT	= /dev/cu.usbserial-615648CD930
 K210-BURNER = ../tools/kflash.py
 
 # Binutils

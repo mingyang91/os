@@ -12,7 +12,6 @@ use riscv::register::{
     stval,
 };
 use crate::syscall::{syscall, SYSCALL};
-use crate::batch::run_next_app;
 
 global_asm!(include_str!("trap.S"));
 
@@ -33,17 +32,17 @@ pub fn trap_handler(ctx: &mut TrapContext) -> &mut TrapContext {
         Trap::Exception(Exception::Breakpoint) => breakpoint(ctx),
         Trap::Exception(Exception::UserEnvCall) => {
             ctx.sepc += 4;
-            let id = SYSCALL::try_from(ctx.x[17]);
+            let id: SYSCALL = SYSCALL::try_from(ctx.x[17]);
             ctx.x[10] = syscall(id, [ctx.x[10], ctx.x[11], ctx.x[12]]) as usize;
         },
         Trap::Exception(Exception::StoreFault) |
         Trap::Exception(Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, core dumped.");
-            run_next_app();
+            panic!("[kernel] Cannot continue!");
         },
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, core dumped.");
-            run_next_app();
+            panic!("[kernel] Cannot continue!");
         },
         _ => fault(ctx, scause, stval),
     }

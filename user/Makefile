@@ -15,13 +15,16 @@ else ifeq ($(BOARD), k210)
 	MODE_ARGS := 
 endif
 
-elf:
-	@cargo build $(MODE_ARGS)
-	@echo $(APPS)
-	@echo $(ELFS)
-	@echo $(BINS)
+elf: $(APPS)
+# TODO: MODE flag
+	@python3 build.py
 
 binary: elf
 	$(foreach elf, $(ELFS), $(OBJCOPY) $(elf) --strip-all -O binary $(patsubst $(TARGET_DIR)/%, $(TARGET_DIR)/%.bin, $(elf));)
 
 build: binary
+
+clean:
+	@cargo clean
+
+.PHONY: elf binary build clean

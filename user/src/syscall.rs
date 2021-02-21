@@ -6,6 +6,7 @@ pub const STDOUT: usize = 1;
 enum SYSCALL {
     Write = 64,
     Exit = 93,
+    Yield = 124,
 }
 
 fn syscall(id: SYSCALL, args: [usize; 3]) -> isize {
@@ -27,4 +28,8 @@ pub fn sys_write(fd: usize, buffer: &[u8]) -> isize {
 
 pub fn sys_exit(xstate: i32) -> isize {
     syscall(SYSCALL::Exit, [xstate as usize, 0, 0])
+}
+
+pub fn sys_yield() -> isize {
+    syscall(SYSCALL::Yield, [0, 0, 0])
 }

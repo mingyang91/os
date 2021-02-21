@@ -3,14 +3,17 @@
 #![feature(global_asm)]
 #![feature(llvm_asm)]
 #![feature(panic_info_message)]
+#![feature(inline_const)]
 
 #[macro_use]
 mod console;
 mod sbi;
 mod lang_items;
 mod trap;
-mod batch;
 mod syscall;
+mod loader;
+mod task;
+mod config;
 
 
 global_asm!(include_str!("boot/entry64.asm"));
@@ -23,8 +26,10 @@ pub fn rust_main() -> ! {
     println!("[kernel] Hello, world!");
 
     trap::init();
-    batch::init();
-    batch::run_next_app();
+    loader::load_apps();
+    task::run_first_task();
+
+    panic!("Unreachable in rust_main");
 }
 
 

@@ -1,16 +1,11 @@
 mod context;
 
-use riscv::register::{
-    scause::{
-        self,
-        Scause,
-        Trap,
-        Exception
-    },
-    stvec,
-    mtvec::TrapMode,
-    stval,
-};
+use riscv::register::{scause::{
+    self,
+    Scause,
+    Trap,
+    Exception
+}, stvec, mtvec::TrapMode, stval, sie};
 use crate::syscall::{syscall, SYSCALL};
 
 global_asm!(include_str!("trap.S"));
@@ -44,9 +39,17 @@ pub fn trap_handler(ctx: &mut TrapContext) -> &mut TrapContext {
             println!("[kernel] IllegalInstruction in application, core dumped.");
             panic!("[kernel] Cannot continue!");
         },
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            set_next_tigger();
+            suspend_current_and_run_next();
+        },
         _ => fault(ctx, scause, stval),
     }
     ctx
+}
+
+pub fn enable_timer_interrupt() {
+    unsafe { sie::set_stimer(); }
 }
 
 
@@ -66,3 +69,6 @@ fn fault(context: &mut TrapContext, scause: Scause, stval: usize) {
 
 
 pub use context::TrapContext;
+use riscv::register::scause::Interrupt;
+use crate::timer::set_next_tigger;
+use crate::task::suspend_current_and_run_next;

@@ -14,6 +14,7 @@ mod syscall;
 mod loader;
 mod task;
 mod config;
+mod timer;
 
 
 global_asm!(include_str!("boot/entry64.asm"));
@@ -27,6 +28,8 @@ pub fn rust_main() -> ! {
 
     trap::init();
     loader::load_apps();
+    trap::enable_timer_interrupt();
+    timer::set_next_tigger();
     task::run_first_task();
 
     panic!("Unreachable in rust_main");

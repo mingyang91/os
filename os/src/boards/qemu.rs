@@ -17,9 +17,6 @@ pub trait QEMUExit {
     ///
     /// Note: Not possible for `X86`.
     fn exit_success(&self) -> !;
-
-    /// Exit QEMU using `EXIT_FAILURE`, aka `1`.
-    fn exit_failure(&self) -> !;
 }
 
 /// RISCV64 configuration
@@ -67,10 +64,6 @@ impl QEMUExit for RISCV64 {
 
     fn exit_success(&self) -> ! {
         self.exit(EXIT_SUCCESS);
-    }
-
-    fn exit_failure(&self) -> ! {
-        self.exit(EXIT_FAILURE);
     }
 }
 

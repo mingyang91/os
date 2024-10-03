@@ -14,6 +14,7 @@ endif
 BOARD := qemu
 SBI ?= rustsbi
 BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
+# BOOTLOADER := ../bootloader/rustsbi-prototyper.bin
 
 # KERNEL ENTRY
 KERNEL_ENTRY_PA := 0x80200000

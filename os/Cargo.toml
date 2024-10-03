@@ -8,5 +8,6 @@ edition = "2021"
 
 [dependencies]
 log = "0.4"
+sbi-rt = "0.0.3"
 [profile.release]
 debug = true

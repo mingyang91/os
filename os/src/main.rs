@@ -7,14 +7,18 @@
 //!
 //! We then call [`println!`] to display `Hello, world!`.
 
+#![feature(naked_functions)]
 #![deny(missing_docs)]
-#![deny(warnings)]
+// #![deny(warnings)]
 #![no_std]
 #![no_main]
-#![feature(panic_info_message)]
 
-use core::arch::global_asm;
+use core::{
+    arch::asm,
+    ptr::{addr_of_mut, null},
+};
 use log::*;
+use uart16550::Uart16550;
 
 #[macro_use]
 mod console;
@@ -25,55 +29,192 @@ mod sbi;
 #[path = "boards/qemu.rs"]
 mod board;
 
-global_asm!(include_str!("entry.asm"));
+const KERNEL_HEAP_SIZE: usize = 128 * 1024; // 128KiB
+#[link_section = ".bss.uninit"]
+static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
+#[global_allocator]
+static KERNEL_HEAP: LockedHeap<32> = LockedHeap::empty();
 
-/// clear BSS segment
-pub fn clear_bss() {
-    extern "C" {
-        fn sbss();
-        fn ebss();
-    }
-    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) });
+use buddy_system_allocator::LockedHeap;
+
+/// 内核入口。
+///
+/// # Safety
+///
+/// 裸函数。
+#[naked]
+#[no_mangle]
+#[link_section = ".text.entry"]
+unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
+    asm!(
+        "la sp, {stack} + {stack_size}",
+        "j  {main}",
+        stack_size = const KERNEL_HEAP_SIZE,
+        stack      =   sym HEAP_SPACE,
+        main       =   sym rust_main,
+        options(noreturn),
+    )
 }
 
-/// the rust entry-point of os
-#[no_mangle]
-pub fn rust_main() -> ! {
+fn init_bss() {
     extern "C" {
-        fn stext(); // begin addr of text segment
-        fn etext(); // end addr of text segment
-        fn srodata(); // start addr of Read-Only data segment
-        fn erodata(); // end addr of Read-Only data ssegment
-        fn sdata(); // start addr of data segment
-        fn edata(); // end addr of data segment
-        fn sbss(); // start addr of BSS segment
-        fn ebss(); // end addr of BSS segment
-        fn boot_stack_lower_bound(); // stack lower bound
-        fn boot_stack_top(); // stack top
+        static mut sbss: usize;
+        static mut ebss: usize;
     }
-    clear_bss();
-    logging::init();
-    println!("[kernel] Hello, world!");
-    trace!(
-        "[kernel] .text [{:#x}, {:#x})",
-        stext as usize,
-        etext as usize
-    );
-    debug!(
-        "[kernel] .rodata [{:#x}, {:#x})",
-        srodata as usize, erodata as usize
-    );
-    info!(
-        "[kernel] .data [{:#x}, {:#x})",
-        sdata as usize, edata as usize
-    );
-    warn!(
-        "[kernel] boot_stack top=bottom={:#x}, lower_bound={:#x}",
-        boot_stack_top as usize, boot_stack_lower_bound as usize
-    );
-    error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
+    unsafe {
+        let mut ptr = sbss as *mut usize;
+        let end = ebss as *mut usize;
+        while ptr < end {
+            ptr.write_volatile(0);
+            ptr = ptr.offset(1);
+        }
+    }
+}
 
+fn init_heap() {
+    unsafe {
+        KERNEL_HEAP
+            .lock()
+            .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE)
+    }
+}
+
+
+macro_rules! addr {
+    ($a:expr) => {
+        &$a as *const _ as usize
+    };
+}
+
+unsafe fn print_sections_range() {
+    extern "C" {
+        static stext: u8;    // Start of .text section
+        static etext: u8;    // End of .text section
+        static srodata: u8;  // Start of .rodata section
+        static erodata: u8;  // End of .rodata section
+        static sdata: u8;    // Start of .data section
+        static edata: u8;    // End of .data section
+        static sbss: u8;     // Start of .bss section
+        static ebss: u8;     // End of .bss section
+    }
+
+    debug!("[kernel] .text   [{:#20x}, {:#20x})", addr!(stext), addr!(etext));
+    debug!(
+        "[kernel] .rodata [{:#20x}, {:#20x})",
+        addr!(srodata), addr!(erodata)
+    );
+    debug!("[kernel] .data   [{:#20x}, {:#20x})", addr!(sdata), addr!(edata));
+    debug!("[kernel] .bss    [{:#20x}, {:#20x})", addr!(sbss), addr!(ebss));
+}
+
+
+/// the rust entry-point of os
+extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
+    if hartid == 0 {
+        init_bss();
+        init_heap();
+    }
+    logging::init();
+    info!("[kernel] Hart id = {}, dtb_pa = {:#x}", hartid, dtb_pa);
+    info!("[kernel] Hello, MY!");
+    let BoardInfo {
+        smp,
+        frequency,
+        uart,
+    } = BoardInfo::parse(dtb_pa);
+    unsafe { UART = Uart16550Map(uart as _) };
+
+    info!(
+        r"
+  __  __         _  __                    _ 
+ |  \/  |       | |/ /                   | |
+ | \  / |_   _  | ' / ___ _ __ _ __   ___| |
+ | |\/| | | | | |  < / _ \ '__| '_ \ / _ \ |
+ | |  | | |_| | | . \  __/ |  | | | |  __/ |
+ |_|  |_|\__, | |_|\_\___|_|  |_| |_|\___|_|
+          __/ |                             
+         |___/                              
+================================================
+| boot hart id          | {hartid:20} |
+| smp                   | {smp:20} |
+| timebase frequency    | {frequency:17} Hz |
+| dtb physical address  | {dtb_pa:#20x} |
+------------------------------------------------"
+    );
+
+    unsafe { print_sections_range() };
     use crate::board::QEMUExit;
     crate::board::QEMU_EXIT_HANDLE.exit_success(); // CI autotest success
                                                    //crate::board::QEMU_EXIT_HANDLE.exit_failure(); // CI autoest failed
+}
+
+struct BoardInfo {
+    smp: usize,
+    frequency: u64,
+    uart: usize,
+}
+
+impl BoardInfo {
+    fn parse(dtb_pa: usize) -> Self {
+        use dtb_walker::{Dtb, DtbObj, HeaderError as E, Property, WalkOperation::*};
+
+        let mut ans = Self {
+            smp: 0,
+            frequency: 0,
+            uart: 0,
+        };
+        unsafe {
+            Dtb::from_raw_parts_filtered(dtb_pa as _, |e| {
+                matches!(e, E::Misaligned(4) | E::LastCompVersion(_))
+            })
+        }
+        .unwrap()
+        .walk(|ctx, obj| match obj {
+            DtbObj::SubNode { name } => {
+                if ctx.level() == 0 && (name == b"cpus" || name == b"soc") {
+                    StepInto
+                } else if ctx.last() == b"cpus" && name.starts_with(b"cpu@") {
+                    ans.smp += 1;
+                    StepOver
+                } else if ctx.last() == b"soc"
+                    && (name.starts_with(b"uart") || name.starts_with(b"serial"))
+                {
+                    StepInto
+                } else {
+                    StepOver
+                }
+            }
+            DtbObj::Property(Property::Reg(mut reg)) => {
+                if ctx.last().starts_with(b"uart") || ctx.last().starts_with(b"serial") {
+                    ans.uart = reg.next().unwrap().start;
+                }
+                StepOut
+            }
+            DtbObj::Property(Property::General { name, value }) => {
+                if ctx.last() == b"cpus" && name.as_bytes() == b"timebase-frequency" {
+                    ans.frequency = match *value {
+                        [a, b, c, d] => u32::from_be_bytes([a, b, c, d]) as _,
+                        [a, b, c, d, e, f, g, h] => u64::from_be_bytes([a, b, c, d, e, f, g, h]),
+                        _ => unreachable!(),
+                    };
+                }
+                StepOver
+            }
+            DtbObj::Property(_) => StepOver,
+        });
+        ans
+    }
+}
+
+static mut UART: Uart16550Map = Uart16550Map(null());
+
+struct Uart16550Map(*const Uart16550<u8>);
+
+unsafe impl Sync for Uart16550Map {}
+
+impl Uart16550Map {
+    #[inline]
+    fn get(&self) -> &Uart16550<u8> {
+        unsafe { &*self.0 }
+    }
 }

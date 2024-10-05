@@ -15,6 +15,8 @@ BOARD := qemu
 SBI ?= rustsbi
 BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
 # BOOTLOADER := ../bootloader/rustsbi-prototyper.bin
+K210_BOOTLOADER_SIZE := 38064
+K210-SERIALPORT := /dev/cu.usbserial-615648CD930
 
 # KERNEL ENTRY
 KERNEL_ENTRY_PA := 0x80200000
@@ -55,11 +57,20 @@ disasm-vim: kernel
 run: run-inner
 
 run-inner: build
+ifeq ($(BOARD),qemu)
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \
 		-device loader,file=$(KERNEL_BIN),addr=$(KERNEL_ENTRY_PA)
+		# -drive file=$(FS_IMG),if=none,format=raw,id=x0 \
+        # -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+else
+	@cp $(BOOTLOADER) $(BOOTLOADER).copy
+	@dd if=$(KERNEL_BIN) of=$(BOOTLOADER).copy bs=$(K210_BOOTLOADER_SIZE) seek=1
+	@mv $(BOOTLOADER).copy $(KERNEL_BIN)
+	kflash -p $(K210-SERIALPORT) -b 1500000 --terminal $(KERNEL_BIN)
+endif
 
 debug: build
 	@tmux new-session -d \

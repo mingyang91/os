@@ -1,6 +1,5 @@
 //! SBI call wrappers
 
-
 use sbi_rt::{NoReason, Shutdown};
 
 /// use sbi call to shutdown the kernel

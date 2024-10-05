@@ -74,7 +74,6 @@ fn init_heap() {
     }
 }
 
-
 macro_rules! addr {
     ($a:expr) => {
         &$a as *const _ as usize
@@ -83,20 +82,36 @@ macro_rules! addr {
 
 unsafe fn print_sections_range() {
     extern "C" {
-        static stext: u8;    // Start of .text section
-        static etext: u8;    // End of .text section
-        static srodata: u8;  // Start of .rodata section
-        static erodata: u8;  // End of .rodata section
-        static sdata: u8;    // Start of .data section
-        static edata: u8;    // End of .data section
-        static sbss: u8;     // Start of .bss section
-        static ebss: u8;     // End of .bss section
+        static stext: u8; // Start of .text section
+        static etext: u8; // End of .text section
+        static srodata: u8; // Start of .rodata section
+        static erodata: u8; // End of .rodata section
+        static sdata: u8; // Start of .data section
+        static edata: u8; // End of .data section
+        static sbss: u8; // Start of .bss section
+        static ebss: u8; // End of .bss section
     }
 
-    debug!("[kernel] .text   [{:#20x}, {:#20x})", addr!(stext), addr!(etext));
-    debug!("[kernel] .rodata [{:#20x}, {:#20x})", addr!(srodata), addr!(erodata));
-    debug!("[kernel] .data   [{:#20x}, {:#20x})", addr!(sdata), addr!(edata));
-    debug!("[kernel] .bss    [{:#20x}, {:#20x})", addr!(sbss), addr!(ebss));
+    debug!(
+        "[kernel] .text   [{:#20x}, {:#20x})",
+        addr!(stext),
+        addr!(etext)
+    );
+    debug!(
+        "[kernel] .rodata [{:#20x}, {:#20x})",
+        addr!(srodata),
+        addr!(erodata)
+    );
+    debug!(
+        "[kernel] .data   [{:#20x}, {:#20x})",
+        addr!(sdata),
+        addr!(edata)
+    );
+    debug!(
+        "[kernel] .bss    [{:#20x}, {:#20x})",
+        addr!(sbss),
+        addr!(ebss)
+    );
 }
 
 /// the rust entry-point of os

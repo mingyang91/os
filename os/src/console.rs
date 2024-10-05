@@ -1,7 +1,6 @@
 //! SBI console driver, for text output
 use core::fmt::{self, Write};
 
-
 struct Stdout;
 
 impl Write for Stdout {

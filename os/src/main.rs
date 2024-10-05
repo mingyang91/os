@@ -13,12 +13,8 @@
 #![no_std]
 #![no_main]
 
-use core::{
-    arch::asm,
-    ptr::null,
-};
+use core::arch::asm;
 use log::*;
-use uart16550::Uart16550;
 
 #[macro_use]
 mod console;
@@ -118,9 +114,8 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
     let BoardInfo {
         smp,
         frequency,
-        uart,
+        uart: _uart,
     } = BoardInfo::parse(dtb_pa);
-    unsafe { UART = Uart16550Map(uart as _) };
 
     info!(
         r"
@@ -201,18 +196,5 @@ impl BoardInfo {
             DtbObj::Property(_) => StepOver,
         });
         ans
-    }
-}
-
-static mut UART: Uart16550Map = Uart16550Map(null());
-
-struct Uart16550Map(*const Uart16550<u8>);
-
-unsafe impl Sync for Uart16550Map {}
-
-impl Uart16550Map {
-    #[inline]
-    fn get(&self) -> &Uart16550<u8> {
-        unsafe { &*self.0 }
     }
 }

@@ -59,6 +59,7 @@ run: run-inner
 run-inner: build
 ifeq ($(BOARD),qemu)
 	@qemu-system-riscv64 \
+		-smp 4,cores=2,threads=2,sockets=1 \
 		-machine virt \
 		-nographic \
 		-bios $(BOOTLOADER) \

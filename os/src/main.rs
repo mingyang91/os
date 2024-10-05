@@ -15,7 +15,7 @@
 
 use core::{
     arch::asm,
-    ptr::{addr_of_mut, null},
+    ptr::null,
 };
 use log::*;
 use uart16550::Uart16550;
@@ -115,8 +115,6 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
         init_heap();
     }
     logging::init();
-    info!("[kernel] Hart id = {}, dtb_pa = {:#x}", hartid, dtb_pa);
-    info!("[kernel] Hello, MY!");
     let BoardInfo {
         smp,
         frequency,

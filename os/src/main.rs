@@ -13,7 +13,7 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
+use core::{arch::asm, sync::atomic::{AtomicBool, Ordering}};
 use log::*;
 
 #[macro_use]
@@ -54,16 +54,15 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
 
 fn init_bss() {
     extern "C" {
-        static mut sbss: usize;
-        static mut ebss: usize;
+        static sbss: u8;
+        static ebss: u8;
     }
     unsafe {
-        let mut ptr = sbss as *mut usize;
-        let end = ebss as *mut usize;
-        while ptr < end {
-            ptr.write_volatile(0);
-            ptr = ptr.offset(1);
-        }
+        let sbss_addr = &sbss as *const u8 as usize;
+        let ebss_addr = &ebss as *const u8 as usize;
+        let bss_size = ebss_addr - sbss_addr;
+        let bss_ptr = sbss_addr as *mut u8;
+        core::slice::from_raw_parts_mut(bss_ptr, bss_size).fill(0);
     }
 }
 
@@ -103,13 +102,10 @@ unsafe fn print_sections_range() {
     debug!("[kernel] .bss    [{:#20x}, {:#20x})", addr!(sbss), addr!(ebss));
 }
 
-
 /// the rust entry-point of os
 extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
-    if hartid == 0 {
-        init_bss();
-        init_heap();
-    }
+    init_bss();
+    init_heap();
     logging::init();
     let BoardInfo {
         smp,

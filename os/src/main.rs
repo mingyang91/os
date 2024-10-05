@@ -9,11 +9,11 @@
 
 #![feature(naked_functions)]
 #![deny(missing_docs)]
-// #![deny(warnings)]
+#![deny(warnings)]
 #![no_std]
 #![no_main]
 
-use core::{arch::asm, sync::atomic::{AtomicBool, Ordering}};
+use core::arch::asm;
 use log::*;
 
 #[macro_use]
@@ -94,10 +94,7 @@ unsafe fn print_sections_range() {
     }
 
     debug!("[kernel] .text   [{:#20x}, {:#20x})", addr!(stext), addr!(etext));
-    debug!(
-        "[kernel] .rodata [{:#20x}, {:#20x})",
-        addr!(srodata), addr!(erodata)
-    );
+    debug!("[kernel] .rodata [{:#20x}, {:#20x})", addr!(srodata), addr!(erodata));
     debug!("[kernel] .data   [{:#20x}, {:#20x})", addr!(sdata), addr!(edata));
     debug!("[kernel] .bss    [{:#20x}, {:#20x})", addr!(sbss), addr!(ebss));
 }

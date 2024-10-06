@@ -74,13 +74,24 @@ fn init_heap() {
     }
 }
 
-macro_rules! addr {
-    ($a:expr) => {
-        &$a as *const _ as usize
+macro_rules! addr_of {
+    ($symbol:ident) => {
+        (&unsafe { $symbol } as *const _) as usize
     };
 }
 
-unsafe fn print_sections_range() {
+macro_rules! print_section_range {
+    ($section_name:expr, $start:ident, $end:ident) => {
+        debug!(
+            "[kernel] {} [{:#20x}, {:#20x})",
+            $section_name,
+            addr_of!($start),
+            addr_of!($end)
+        );
+    };
+}
+
+fn print_sections_range() {
     extern "C" {
         static stext: u8; // Start of .text section
         static etext: u8; // End of .text section
@@ -92,26 +103,10 @@ unsafe fn print_sections_range() {
         static ebss: u8; // End of .bss section
     }
 
-    debug!(
-        "[kernel] .text   [{:#20x}, {:#20x})",
-        addr!(stext),
-        addr!(etext)
-    );
-    debug!(
-        "[kernel] .rodata [{:#20x}, {:#20x})",
-        addr!(srodata),
-        addr!(erodata)
-    );
-    debug!(
-        "[kernel] .data   [{:#20x}, {:#20x})",
-        addr!(sdata),
-        addr!(edata)
-    );
-    debug!(
-        "[kernel] .bss    [{:#20x}, {:#20x})",
-        addr!(sbss),
-        addr!(ebss)
-    );
+    print_section_range!(".text   ", stext, etext);
+    print_section_range!(".rodata ", srodata, erodata);
+    print_section_range!(".data   ", sdata, edata);
+    print_section_range!(".bss    ", sbss, ebss);
 }
 
 /// the rust entry-point of os
@@ -143,7 +138,7 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 ------------------------------------------------"
     );
 
-    unsafe { print_sections_range() };
+    print_sections_range();
     use crate::board::QEMUExit;
     crate::board::QEMU_EXIT_HANDLE.exit_success(); // CI autotest success
                                                    //crate::board::QEMU_EXIT_HANDLE.exit_failure(); // CI autoest failed

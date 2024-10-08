@@ -14,6 +14,7 @@
 #![no_main]
 
 use core::arch::asm;
+use core::ptr::{addr_of, write_volatile};
 use log::*;
 
 #[macro_use]
@@ -42,15 +43,74 @@ use buddy_system_allocator::LockedHeap;
 #[no_mangle]
 #[link_section = ".text.entry"]
 unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
+    extern "C" {
+        static BOOT_STACK_TOP: usize;
+    }
+
     asm!(
-        "la sp, {stack} + {stack_size}",
-        "j  {main}",
-        stack_size = const KERNEL_HEAP_SIZE,
-        stack      =   sym HEAP_SPACE,
-        main       =   sym rust_main,
+        "la sp, {boot_stack_top}",
+        "call {init_page_table}",
+        "call {set_satp}",
+        "lui t0, %hi({main})",
+        "addi t0, t0, %lo({main})",
+        "jr t0",
+        boot_stack_top  = sym BOOT_STACK_TOP,
+        init_page_table = sym init_page_table,
+        set_satp        = sym set_satp,
+        main            = sym rust_main,
         options(noreturn),
     )
 }
+
+const PTE_V: usize = 0b00000001;
+const PTE_R: usize = 0b00000010;
+const PTE_W: usize = 0b00000100;
+const PTE_X: usize = 0b00001000;
+
+#[repr(align(4096))]
+struct PageTable([usize; 512]);
+
+const KERNEL_VIRT_BASE: usize = 0xffffffffc0000000;
+const KERNEL_PHYS_BASE: usize = 0x80000000;
+
+#[no_mangle]
+#[link_section = ".text.entry"]
+extern "C" fn init_page_table() {
+    // Map the kernel's high virtual addresses to physical addresses
+    let vpn = (KERNEL_VIRT_BASE >> 30) & 0x1FF; // Level 2 VPN
+    let ppn = (KERNEL_PHYS_BASE >> 12) & 0xFFFFFFFFFFF; // Physical Page Number
+
+    // Create a PTE for the kernel mapping
+    let pte = (ppn << 10) | PTE_V | PTE_R | PTE_W | PTE_X;
+
+    // Write the PTE into the root page table
+    unsafe { write_volatile(&mut ROOT_PAGE_TABLE.0[vpn], pte) };
+}
+
+#[no_mangle]
+#[link_section = ".text.entry"]
+extern "C" fn set_satp() {
+    // Compute the SATP value based on the page table physical address
+    // For Sv39:
+    // satp = (MODE << 60) | (ASID << 44) | (PPN)
+    const MODE: usize = 8; // Sv39 mode
+    const ASID: usize = 0;
+    let page_table_ppn: usize = core::ptr::addr_of!(ROOT_PAGE_TABLE) as *const _ as usize >> 12;
+
+    let satp = (MODE << 60) | (ASID << 44) | page_table_ppn;
+
+    unsafe {
+        asm!(
+            "csrw satp, {0}",
+            "sfence.vma",
+            in(reg) satp
+        );
+    }
+}
+
+#[no_mangle]
+#[link_section = ".bss.entry"]
+static mut ROOT_PAGE_TABLE: PageTable = PageTable([0; 512]);
 
 fn init_bss() {
     extern "C" {
@@ -70,7 +130,7 @@ fn init_heap() {
     unsafe {
         KERNEL_HEAP
             .lock()
-            .init(HEAP_SPACE.as_ptr() as usize, KERNEL_HEAP_SIZE)
+            .init(&raw const HEAP_SPACE as usize, KERNEL_HEAP_SIZE)
     }
 }
 
@@ -110,6 +170,7 @@ fn print_sections_range() {
 }
 
 /// the rust entry-point of os
+#[no_mangle]
 extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
     init_bss();
     init_heap();

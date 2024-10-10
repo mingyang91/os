@@ -1,15 +1,13 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 MEMORY {
-    DRAM : ORIGIN = 0xffffffffc0200000, LENGTH = 64M
+    DRAM : ORIGIN = 0xffffffff80200000, LENGTH = 64M
 }
 SECTIONS {
     /* Boot section: startup code and data needed before enabling virtual memory */
     .text.entry : ALIGN(4K) {
         _start = .;                            /* Entry point */
         KEEP(*(.text.entry))                   /* Startup code */
-        *(.text.init_page_table)               /* Page table initialization code */
-        *(.text.set_satp)
         *(.rodata.entry)                       /* Read-only data needed at boot */
         *(.data.entry)                         /* Initialized data needed at boot */
     } > DRAM
@@ -18,6 +16,10 @@ SECTIONS {
     .bss.entry (NOLOAD) : ALIGN(4K) {
         *(.bss.entry)                          /* Uninitialized data for boot */
         BOOT_STACK_TOP = .;
+    } > DRAM
+
+    .pte.entry (NOLOAD) : ALIGN(4K) {
+        *(.pte.entry)                          /* Uninitialized data for boot */
     } > DRAM
 
     .text : {

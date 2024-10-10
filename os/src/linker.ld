@@ -8,8 +8,8 @@ SECTIONS {
     .text.entry : ALIGN(4K) {
         _start = .;                            /* Entry point */
         KEEP(*(.text.entry))                   /* Startup code */
-        *(.rodata.entry)                       /* Read-only data needed at boot */
-        *(.data.entry)                         /* Initialized data needed at boot */
+        KEEP(*(.rodata.entry))                 /* Read-only data needed at boot */
+        KEEP(*(.data.entry))                   /* Initialized data needed at boot */
     } > DRAM
 
     /* Boot stack in low physical memory */
@@ -22,31 +22,29 @@ SECTIONS {
         *(.pte.entry)                          /* Uninitialized data for boot */
     } > DRAM
 
-    .text : {
+    .text : ALIGN(4K) {
         stext = .;
-        *(.text.entry)
-        *(.text .text.*)
+        *(.text)
+        *(.text.*)
         etext = .;
     } > DRAM
-    .rodata : {
+    .rodata : ALIGN(4k) {
         srodata = .;
-        *(.rodata .rodata.*)
-        *(.srodata .srodata.*)
+        *(.rodata)
+        *(.rodata.*)
         erodata = .;
     } > DRAM
-    .data : {
+    .data : ALIGN(4k) {
         sdata = .;
-        *(.data .data.*)
-        *(.sdata .sdata.*)
+        *(.data)
+        *(.data.*)
         edata = .;
     } > DRAM
-    .bss (NOLOAD) : {
-        *(.bss.uninit)
-        . = ALIGN(8);
+    .bss (NOLOAD) : ALIGN(4k) {
         sbss = .;
-        *(.bss .bss.*)
-        *(.sbss .sbss.*)
-        . = ALIGN(8);
+        *(.bss.uninit)
+        *(.bss)
+        *(.bss.*)
         ebss = .;
     } > DRAM
     /DISCARD/ : {

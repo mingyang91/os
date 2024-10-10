@@ -51,13 +51,14 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
     init_page_table();
     asm!(
         "lui sp, %hi({BOOT_STACK_TOP})",
-        "li a0, {OFFSET}",
-        "add sp, sp, a0",
         "lui t0, %hi({main})",
         "addi t0, t0, %lo({main})",
+        "mv a0, {hartid}",
+        "mv a1, {device_tree_paddr}",
         "jr t0",
         BOOT_STACK_TOP = sym BOOT_STACK_TOP,
-        OFFSET = const (KERNEL_VIRT_BASE - KERNEL_PHYS_BASE),
+        hartid = in(reg) hartid,
+        device_tree_paddr = in(reg) device_tree_paddr,
         main = sym rust_main,
         options(noreturn),
     );
@@ -191,10 +192,10 @@ fn print_sections_range() {
 /// the rust entry-point of os
 #[no_mangle]
 extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
-    sbi_rt::console_write_byte(b'6');
+    logging::init();
+    print_sections_range();
     init_bss();
     init_heap();
-    logging::init();
     let BoardInfo {
         smp,
         frequency,
@@ -219,7 +220,6 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 ------------------------------------------------"
     );
 
-    print_sections_range();
     use crate::board::QEMUExit;
     crate::board::QEMU_EXIT_HANDLE.exit_success(); // CI autotest success
                                                    //crate::board::QEMU_EXIT_HANDLE.exit_failure(); // CI autoest failed

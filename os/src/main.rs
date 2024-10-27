@@ -8,17 +8,22 @@
 //! We then call [`println!`] to display `Hello, world!`.
 
 #![feature(naked_functions)]
+#![feature(const_trait_impl)]
 #![deny(missing_docs)]
 #![no_std]
 #![no_main]
 
-use core::{arch::asm, ptr::{addr_of, write_volatile}};
+use core::{
+    arch::asm,
+    ptr::{addr_of, write_volatile},
+};
 use log::*;
 
 #[macro_use]
 mod console;
 mod lang_items;
 mod logging;
+mod mm;
 mod sbi;
 
 #[path = "boards/qemu.rs"]
@@ -78,15 +83,6 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
     // )
 }
 
-const PTE_V: usize = 0b00000001;
-const PTE_R: usize = 0b00000010;
-const PTE_W: usize = 0b00000100;
-const PTE_X: usize = 0b00001000;
-// const PTE_U: usize = 0b00010000;
-// const PTE_G: usize = 0b00100000;
-const PTE_A: usize = 0b01000000;
-const PTE_D: usize = 0b10000000;
-
 #[repr(C, align(4096))]
 struct PageTable([usize; 512]);
 
@@ -103,11 +99,11 @@ fn init_page_table() {
     let ppn = (KERNEL_PHYS_BASE >> 12) & 0xFFFFFFFFFFF; // Physical Page Number
 
     // Create a PTE for the kernel mapping
-    let pte = (ppn << 10) | PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
+    let pte = (ppn << 10) | mm::KERNEL_PTE_FLAGS;
 
     let phy_vpn = (KERNEL_PHYS_BASE >> 30) & 0x1FF;
     // Write the PTE into the root page table
-    unsafe { 
+    unsafe {
         write_volatile(&mut ROOT_PAGE_TABLE.0[phy_vpn], pte);
         write_volatile(&mut ROOT_PAGE_TABLE.0[vpn], pte);
         set_satp();

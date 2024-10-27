@@ -220,9 +220,7 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 ------------------------------------------------"
     );
 
-    use crate::board::QEMUExit;
-    crate::board::QEMU_EXIT_HANDLE.exit_success(); // CI autotest success
-                                                   //crate::board::QEMU_EXIT_HANDLE.exit_failure(); // CI autoest failed
+    sbi::shutdown();
 }
 
 struct BoardInfo {

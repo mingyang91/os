@@ -13,10 +13,7 @@
 #![no_std]
 #![no_main]
 
-use core::{
-    arch::asm,
-    ptr::{addr_of, write_volatile},
-};
+use core::{arch::asm, ptr::addr_of};
 use log::*;
 
 #[macro_use]
@@ -40,6 +37,7 @@ static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 static KERNEL_HEAP: LockedHeap<32> = LockedHeap::empty();
 
 use buddy_system_allocator::LockedHeap;
+use mm::{Address, AlignSize, RootPageTable, RV39};
 
 /// 内核入口。
 ///
@@ -83,9 +81,6 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
     // )
 }
 
-#[repr(C, align(4096))]
-struct PageTable([usize; 512]);
-
 // #[link_section = ".rodata.entry"] // Place it in the read-only data section
 // #[no_mangle]                  // Prevent name mangling
 /// virtual address of the kernel
@@ -94,18 +89,11 @@ const KERNEL_PHYS_BASE: usize = 0x80000000;
 
 #[inline]
 fn init_page_table() {
-    // Map the kernel's high virtual addresses to physical addresses
-    let vpn = (KERNEL_VIRT_BASE >> 30) & 0x1FF; // Level 2 VPN
-    let ppn = (KERNEL_PHYS_BASE >> 12) & 0xFFFFFFFFFFF; // Physical Page Number
-
-    // Create a PTE for the kernel mapping
-    let pte = (ppn << 10) | mm::KERNEL_PTE_FLAGS;
-
-    let phy_vpn = (KERNEL_PHYS_BASE >> 30) & 0x1FF;
-    // Write the PTE into the root page table
+    const VIRT_ADDR: Address = Address::new(KERNEL_VIRT_BASE);
+    const PHY_ADDR: Address = Address::new(KERNEL_PHYS_BASE);
     unsafe {
-        write_volatile(&mut ROOT_PAGE_TABLE.0[phy_vpn], pte);
-        write_volatile(&mut ROOT_PAGE_TABLE.0[vpn], pte);
+        let _ = ROOT_PAGE_TABLE.map(PHY_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
+        let _ = ROOT_PAGE_TABLE.map(VIRT_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
         set_satp();
     }
 }
@@ -126,7 +114,7 @@ unsafe fn set_satp() {
 
 #[no_mangle]
 #[link_section = ".pte.entry"]
-static mut ROOT_PAGE_TABLE: PageTable = PageTable([0; 512]);
+static mut ROOT_PAGE_TABLE: RootPageTable<RV39> = RootPageTable::zero();
 
 fn init_bss() {
     extern "C" {

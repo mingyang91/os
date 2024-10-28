@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, ptr::write_volatile};
+use core::{marker::PhantomData, ops::Add, ptr::write_volatile};
 
 use bitflags::bitflags;
 
@@ -114,6 +114,9 @@ impl<S: PageTableSpec> RootPageTable<S> {
         }
 
         if align_size == AlignSize::Page1G && S::LEVEL == 3 {
+            if !virt_addr.is_aligned::<Align1G>() || !phy_addr.is_aligned::<Align1G>() {
+                return Err(Error::AddressNotAligned);
+            }
             let vpn_2 = virt_addr.pn_2();
             let mut pte = PageTableEntry::zero();
             pte.set_ppn_2(phy_addr.pn_2());
@@ -256,10 +259,12 @@ pub struct Address<A: AlignCheck = Unaligned>(usize, core::marker::PhantomData<A
 
 impl Address {
     #[inline]
-    pub const fn new(addr: usize) -> Address {
+    pub const fn new(addr: usize) -> Address<Unaligned> {
         Address(addr, PhantomData)
     }
+}
 
+impl<A: AlignCheck> Address<A> {
     #[inline]
     pub fn as_usize(&self) -> usize {
         self.0
@@ -296,13 +301,13 @@ impl Address {
     }
 
     #[inline]
-    pub fn is_aligned<A: AlignCheck>(&self) -> bool {
-        self.0 & (A::ALIGN_SIZE - 1) == 0
+    pub fn is_aligned<T: AlignCheck>(&self) -> bool {
+        self.0 & (T::ALIGN_SIZE - 1) == 0
     }
 
     #[inline]
-    pub fn check_alignment<A: AlignCheck>(self) -> Result<Address<A>, Error> {
-        if self.is_aligned::<A>() {
+    pub fn check_alignment<T: AlignCheck>(self) -> Result<Address<A>, Error> {
+        if self.is_aligned::<T>() {
             Ok(Address(self.0, PhantomData))
         } else {
             Err(Error::AddressNotAligned)

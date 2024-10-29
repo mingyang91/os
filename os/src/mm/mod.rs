@@ -94,7 +94,7 @@ impl PageTable {
 
     #[inline]
     pub fn ppn(&self) -> usize {
-        core::ptr::addr_of!(self) as *const _ as usize >> 12
+        core::ptr::addr_of!(*self) as *const _ as usize >> 12
     }
 }
 

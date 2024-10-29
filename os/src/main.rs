@@ -52,16 +52,8 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
         static BOOT_STACK_TOP: usize;
     }
 
-    // MAGIC: reset stack pointer to the top of the boot stack
-    // because sometime rustc will generate push instruction at the beginning of the function
-    asm!(
-        "lui sp, %hi({BOOT_STACK_TOP})",
-        "slli sp, sp, 32",
-        "srli sp, sp, 32",
-        BOOT_STACK_TOP = sym BOOT_STACK_TOP,
-    );
-
     init_page_table();
+
     asm!(
         "lui sp, %hi({BOOT_STACK_TOP})",
         "lui t0, %hi({main})",

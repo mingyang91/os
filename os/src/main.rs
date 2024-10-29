@@ -51,6 +51,15 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
     extern "C" {
         static BOOT_STACK_TOP: usize;
     }
+
+    // MAGIC: don't modify
+    asm!(
+        "lui sp, %hi({BOOT_STACK_TOP})",
+        "slli sp, sp, 32",
+        "srli sp, sp, 32",
+        BOOT_STACK_TOP = sym BOOT_STACK_TOP,
+    );
+
     init_page_table();
     asm!(
         "lui sp, %hi({BOOT_STACK_TOP})",
@@ -65,36 +74,20 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
         main = sym rust_main,
         options(noreturn),
     );
-    // rust_main(hartid, device_tree_paddr)
-    // asm!(
-    //     "la sp, {boot_stack_top}",
-    //     "call {init_page_table}",
-    //     "call {set_satp}",
-    //     "lui t0, %hi({main})",
-    //     "addi t0, t0, %lo({main})",
-    //     "jr t0",
-    //     boot_stack_top  = sym BOOT_STACK_TOP,
-    //     init_page_table = sym init_page_table,
-    //     set_satp        = sym set_satp,
-    //     main            = sym rust_main,
-    //     options(noreturn),
-    // )
 }
 
-// #[link_section = ".rodata.entry"] // Place it in the read-only data section
-// #[no_mangle]                  // Prevent name mangling
 /// virtual address of the kernel
 const KERNEL_VIRT_BASE: usize = 0xffffffff80000000;
+const VIRT_ADDR: Address = Address::new(KERNEL_VIRT_BASE);
 const KERNEL_PHYS_BASE: usize = 0x80000000;
+const PHY_ADDR: Address = Address::new(KERNEL_PHYS_BASE);
 
-#[inline]
+#[inline(always)]
 fn init_page_table() {
-    const VIRT_ADDR: Address = Address::new(KERNEL_VIRT_BASE);
-    const PHY_ADDR: Address = Address::new(KERNEL_PHYS_BASE);
     unsafe {
         let _ = ROOT_PAGE_TABLE.map(PHY_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
         let _ = ROOT_PAGE_TABLE.map(VIRT_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
-        set_satp();
+        ROOT_PAGE_TABLE.active(0);
     }
 }
 

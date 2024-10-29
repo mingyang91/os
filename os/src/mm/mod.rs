@@ -1,4 +1,6 @@
-use core::{marker::PhantomData, ops::Add, ptr::write_volatile};
+pub mod allocator;
+
+use core::{marker::PhantomData, ptr::write_volatile};
 
 use bitflags::bitflags;
 
@@ -9,6 +11,7 @@ const RSW_BITS: usize = 2;
 const PTE_FLAGS_BITS: usize = 8;
 
 mod pte_mask {
+    #![allow(dead_code)]
     pub const FLAGS_MASK: usize =
         0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_11111111;
     pub const RSW_MASK: usize =
@@ -26,6 +29,7 @@ mod pte_mask {
 }
 
 mod addr_mask {
+    #![allow(dead_code)]
     pub const OFFSET_MASK: usize =
         0b00000000_00000000_00000000_00000000_00000000_00000000_00001111_11111111;
     pub const PN_0_MASK: usize =
@@ -38,6 +42,16 @@ mod addr_mask {
         0b00000000_00000000_11111111_10000000_00000000_00000000_00000000_00000000;
     pub const PN_4_MASK: usize =
         0b00000001_11111111_00000000_00000000_00000000_00000000_00000000_00000000;
+}
+
+mod satp_mask {
+    #![allow(dead_code)]
+    pub const PPN_BITS: usize = 44;
+    pub const ASID_BITS: usize = 16;
+    pub const MODE_BITS: usize = 4;
+    pub const PPN_MASK:  usize = (1 << PPN_BITS) - 1;
+    pub const ASID_MASK: usize = ((1 << ASID_BITS) - 1) << PPN_BITS;
+    pub const MODE_MASK: usize = ((1 << MODE_BITS) - 1) << (PPN_BITS + ASID_BITS);
 }
 
 bitflags! {
@@ -77,6 +91,11 @@ impl PageTable {
     pub const fn zero() -> PageTable {
         PageTable([PageTableEntry::zero(); 512])
     }
+
+    #[inline]
+    pub fn ppn(&self) -> usize {
+        core::ptr::addr_of!(self) as *const _ as usize >> 12
+    }
 }
 
 #[repr(C, align(4096))]
@@ -91,6 +110,18 @@ pub enum Error {
 impl<S: PageTableSpec> RootPageTable<S> {
     pub const fn zero() -> RootPageTable<S> {
         RootPageTable(PageTable::zero(), PhantomData)
+    }
+
+    #[inline]
+    pub fn satp(&self, asid: usize) -> usize {
+        const { assert!(S::MODE < 1 << 4); }
+        (S::MODE << 60) | ((asid << 44) & satp_mask::ASID_MASK) | self.0.ppn()
+    }
+
+    #[inline]
+    pub fn active(&self, asid: usize) {
+        riscv::register::satp::write(self.satp(asid));
+        riscv::asm::sfence_vma_all();
     }
 
     #[inline]
@@ -254,7 +285,7 @@ impl AlignCheck for Align512G {
     const ALIGN_SIZE: usize = PAGE_SIZE << (PN_BITS * 3);
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Address<A: AlignCheck = Unaligned>(usize, core::marker::PhantomData<A>);
 
 impl Address {

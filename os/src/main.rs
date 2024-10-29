@@ -54,14 +54,20 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
 
     // MAGIC: don't modify
     asm!(
-        "lui t0, %hi({BOOT_STACK_TOP})",
-        "slli t0, t0, 32",
-        "srli t0, t0, 32",
-        // mask t0 63-32 bits to 0
-        "mv sp, t0", // right code
-        // "add sp, sp, t0", // wrong code
+        "lui sp, %hi({BOOT_STACK_TOP})",
+        "slli sp, sp, 32",
+        "srli sp, sp, 32",
         BOOT_STACK_TOP = sym BOOT_STACK_TOP,
     );
+
+    // wrong version
+    // asm!(
+    //     "lui t0, %hi({BOOT_STACK_TOP})",
+    //     "slli t0, t0, 32",
+    //     "srli t0, t0, 32",
+    //     "add sp, sp, t0",
+    //     BOOT_STACK_TOP = sym BOOT_STACK_TOP,
+    // );
 
     init_page_table();
     asm!(

@@ -91,20 +91,6 @@ fn init_page_table() {
     }
 }
 
-#[inline]
-unsafe fn set_satp() {
-    // Compute the SATP value based on the page table physical address
-    // For Sv39:
-    // satp = (MODE << 60) | (ASID << 44) | (PPN)
-    const MODE: usize = 8; // Sv39 mode
-    const ASID: usize = 0;
-    let page_table_ppn: usize = core::ptr::addr_of!(ROOT_PAGE_TABLE) as *const _ as usize >> 12;
-
-    let satp = (MODE << 60) | (ASID << 44) | page_table_ppn;
-    riscv::register::satp::write(satp);
-    riscv::asm::sfence_vma_all();
-}
-
 #[no_mangle]
 #[link_section = ".pte.entry"]
 static mut ROOT_PAGE_TABLE: RootPageTable<RV39> = RootPageTable::zero();

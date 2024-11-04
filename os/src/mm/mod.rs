@@ -362,7 +362,7 @@ impl Address {
 
 impl<A: AlignCheck> Address<A> {
     #[inline]
-    pub fn as_usize(&self) -> usize {
+    pub const fn as_usize(&self) -> usize {
         self.0
     }
 
@@ -402,6 +402,7 @@ impl<A: AlignCheck> Address<A> {
 pub trait PageTableSpec {
     const MODE: usize;
     const LEVEL: usize;
+    const MAX_PAGE_SIZE: usize = 1 << (9 * Self::LEVEL);
 }
 
 pub struct Sv39;

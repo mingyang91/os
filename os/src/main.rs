@@ -9,15 +9,13 @@
 
 #![feature(naked_functions)]
 #![feature(const_trait_impl)]
+#![feature(alloc_error_handler)]
 #![deny(missing_docs)]
 #![no_std]
 #![no_main]
 
 use core::{
-    arch::asm,
-    ptr::addr_of,
-    sync::atomic::{AtomicUsize, Ordering},
-    usize,
+    arch::asm, mem, ptr::addr_of, sync::atomic::{AtomicUsize, Ordering}, usize
 };
 use log::*;
 
@@ -41,8 +39,14 @@ static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 #[global_allocator]
 static KERNEL_HEAP: LockedHeap<32> = LockedHeap::empty();
 
+#[alloc_error_handler]
+/// panic when heap allocation error occurs
+pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
+    panic!("Heap allocation error, layout = {:?}", layout);
+}
+
 use buddy_system_allocator::LockedHeap;
-use mm::{Address, AlignSize, RootPageTable, Sv39};
+use mm::{allocator::FRAME_ALLOCATOR, Address, AlignSize, RootPageTable, Sv39};
 
 /// 内核入口。
 ///
@@ -83,7 +87,7 @@ unsafe extern "C" fn _hart_start(hartid: usize, stack_top: usize) -> ! {
     asm!(
         "mv sp, {stack_top}",
         "mv a0, {hartid}",
-        "mv a1, zero",
+        "mv a1, {stack_top}",
         "call {main}",
         stack_top = in(reg) stack_top,
         hartid = in(reg) hartid,
@@ -97,6 +101,7 @@ const KERNEL_VIRT_BASE: usize = 0xffffffff80000000;
 const VIRT_ADDR: Address = Address::new(KERNEL_VIRT_BASE);
 const KERNEL_PHYS_BASE: usize = 0x80000000;
 const PHY_ADDR: Address = Address::new(KERNEL_PHYS_BASE);
+const KERNEL_START: usize = 0x80200000;
 
 #[inline(always)]
 fn init_page_table(hartid: usize) {
@@ -194,6 +199,8 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
             smp,
             frequency,
             uart: _uart,
+            memory,
+            memory_count,
         } = BoardInfo::parse(dtb_pa);
 
         info!(
@@ -213,11 +220,21 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 | dtb physical address  | {dtb_pa:#20x} |
 ------------------------------------------------"
         );
+
+        for (i, (start, end)) in memory.iter().take(memory_count).enumerate() {
+            info!(r"memory region {i:10} [{start:#20x}, {end:#20x})", i = i, start = start, end = end);
+            let kernel_end = KERNEL_START + 0x4000000;
+            FRAME_ALLOCATOR.init(kernel_end, *end - kernel_end);
+        }
+
         for i in 0..smp {
+            let frame = FRAME_ALLOCATOR.alloc::<Sv39>(0x800000)
+                .expect("failed to allocate stack frame");
             if i != hartid {
-                let hart_stack = 0x80a00000 + 0x800000 * i;
-                sbi_rt::hart_start(i, 0x80200000, hart_stack);
+                let hart_stack = frame.ptr.as_ptr() as usize;
+                sbi_rt::hart_start(i, KERNEL_START, hart_stack);
             }
+            mem::forget(frame);
         }
 
         for _ in 0..100_000_000 {
@@ -228,7 +245,7 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
         
         sbi::shutdown();
     } else {
-        info!("hart {} started", hartid);
+        info!("hart {} started at {:#20x}", hartid, dtb_pa);
         loop {
             for _ in 0..10_000_000 {
                 unsafe {
@@ -244,6 +261,8 @@ struct BoardInfo {
     smp: usize,
     frequency: u64,
     uart: usize,
+    memory: [(usize, usize); 8],
+    memory_count: usize,
 }
 
 impl BoardInfo {
@@ -254,6 +273,8 @@ impl BoardInfo {
             smp: 0,
             frequency: 0,
             uart: 0,
+            memory: [(0, 0); 8],
+            memory_count: 0,
         };
         unsafe {
             Dtb::from_raw_parts_filtered(dtb_pa as _, |e| {
@@ -272,6 +293,8 @@ impl BoardInfo {
                     && (name.starts_with(b"uart") || name.starts_with(b"serial"))
                 {
                     StepInto
+                } else if name.starts_with(b"memory@") {
+                    StepInto
                 } else {
                     StepOver
                 }
@@ -279,6 +302,15 @@ impl BoardInfo {
             DtbObj::Property(Property::Reg(mut reg)) => {
                 if ctx.last().starts_with(b"uart") || ctx.last().starts_with(b"serial") {
                     ans.uart = reg.next().unwrap().start;
+                } else if ctx.last().starts_with(b"memory") {
+                    while let Some(r) = reg.next() {
+                        if ans.memory_count >= ans.memory.len() {
+                            break;
+                        }
+                        info!("memory region: {:#x} - {:#x}", r.start, r.end);
+                        ans.memory[ans.memory_count] = (r.start, r.end);
+                        ans.memory_count += 1;
+                    }
                 }
                 StepOut
             }

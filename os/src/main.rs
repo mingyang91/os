@@ -37,7 +37,7 @@ static mut HEAP_SPACE: [u8; KERNEL_HEAP_SIZE] = [0; KERNEL_HEAP_SIZE];
 static KERNEL_HEAP: LockedHeap<32> = LockedHeap::empty();
 
 use buddy_system_allocator::LockedHeap;
-use mm::{Address, AlignSize, RootPageTable, RV39};
+use mm::{Address, AlignSize, RootPageTable, Sv39};
 
 /// 内核入口。
 ///
@@ -86,7 +86,7 @@ fn init_page_table() {
 
 #[no_mangle]
 #[link_section = ".pte.entry"]
-static ROOT_PAGE_TABLE: RootPageTable<RV39> = RootPageTable::zero();
+static ROOT_PAGE_TABLE: RootPageTable<Sv39> = RootPageTable::zero();
 
 fn init_bss() {
     extern "C" {

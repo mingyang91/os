@@ -101,7 +101,7 @@ impl PageTable {
 #[repr(C, align(4096))]
 pub struct RootPageTable<S: PageTableSpec>(UnsafeCell<PageTable>, core::marker::PhantomData<S>);
 
-unsafe impl Sync for RootPageTable<RV39> {}
+unsafe impl Sync for RootPageTable<Sv39> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -359,9 +359,9 @@ pub trait PageTableSpec {
     const LEVEL: usize;
 }
 
-pub struct RV39;
+pub struct Sv39;
 
-impl PageTableSpec for RV39 {
+impl PageTableSpec for Sv39 {
     const MODE: usize = 8;
     const LEVEL: usize = 3;
 }

@@ -13,7 +13,7 @@
 #![no_std]
 #![no_main]
 
-use core::{arch::asm, ptr::addr_of};
+use core::{arch::asm, cell::UnsafeCell, ptr::addr_of};
 use log::*;
 
 #[macro_use]
@@ -86,7 +86,7 @@ fn init_page_table() {
 
 #[no_mangle]
 #[link_section = ".pte.entry"]
-static mut ROOT_PAGE_TABLE: RootPageTable<RV39> = RootPageTable::zero();
+static ROOT_PAGE_TABLE: RootPageTable<RV39> = RootPageTable::zero();
 
 fn init_bss() {
     extern "C" {

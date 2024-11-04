@@ -1,6 +1,6 @@
 pub mod allocator;
 
-use core::{marker::PhantomData, ptr::write_volatile};
+use core::{cell::UnsafeCell, marker::PhantomData, ptr::write_volatile};
 
 use bitflags::bitflags;
 
@@ -99,7 +99,9 @@ impl PageTable {
 }
 
 #[repr(C, align(4096))]
-pub struct RootPageTable<S: PageTableSpec>(PageTable, core::marker::PhantomData<S>);
+pub struct RootPageTable<S: PageTableSpec>(UnsafeCell<PageTable>, core::marker::PhantomData<S>);
+
+unsafe impl Sync for RootPageTable<RV39> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -109,13 +111,18 @@ pub enum Error {
 
 impl<S: PageTableSpec> RootPageTable<S> {
     pub const fn zero() -> RootPageTable<S> {
-        RootPageTable(PageTable::zero(), PhantomData)
+        RootPageTable(UnsafeCell::new(PageTable::zero()), PhantomData)
+    }
+
+    #[inline]
+    fn ppn(&self) -> usize {
+        unsafe { (*self.0.get()).ppn() }
     }
 
     #[inline]
     pub fn satp(&self, asid: usize) -> usize {
         const { assert!(S::MODE < 1 << 4); }
-        (S::MODE << 60) | ((asid << 44) & satp_mask::ASID_MASK) | self.0.ppn()
+        (S::MODE << 60) | ((asid << 44) & satp_mask::ASID_MASK) | self.ppn()
     }
 
     #[inline]
@@ -126,7 +133,7 @@ impl<S: PageTableSpec> RootPageTable<S> {
 
     #[inline]
     pub unsafe fn map(
-        &mut self,
+        &self,
         virt_addr: Address,
         phy_addr: Address,
         align_size: AlignSize,
@@ -152,7 +159,8 @@ impl<S: PageTableSpec> RootPageTable<S> {
             let mut pte = PageTableEntry::zero();
             pte.set_ppn_2(phy_addr.pn_2());
             pte.set_flags(flags);
-            write_volatile(&mut self.0 .0[vpn_2], pte);
+            
+            write_volatile(&mut (*self.0.get()).0[vpn_2], pte);
             return Ok(());
         }
 

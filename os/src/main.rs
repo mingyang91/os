@@ -13,7 +13,12 @@
 #![no_std]
 #![no_main]
 
-use core::{arch::asm, cell::UnsafeCell, ptr::addr_of};
+use core::{
+    arch::asm,
+    ptr::addr_of,
+    sync::atomic::{AtomicUsize, Ordering},
+    usize,
+};
 use log::*;
 
 #[macro_use]
@@ -52,21 +57,39 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
         static BOOT_STACK_TOP: usize;
     }
 
-    init_page_table();
+    set_boot_hart(hartid);
+    init_page_table(hartid);
 
+    if is_boot_hart(hartid) {
+        asm!(
+            "lui sp, %hi({BOOT_STACK_TOP})",
+            "lui t0, %hi({main})",
+            "addi t0, t0, %lo({main})",
+            "mv a0, {hartid}",
+            "mv a1, {device_tree_paddr}",
+            "jr t0",
+            BOOT_STACK_TOP = sym BOOT_STACK_TOP,
+            hartid = in(reg) hartid,
+            device_tree_paddr = in(reg) device_tree_paddr,
+            main = sym rust_main,
+            options(noreturn),
+        );
+    } else {
+        _hart_start(hartid, device_tree_paddr);
+    }
+}
+
+unsafe extern "C" fn _hart_start(hartid: usize, stack_top: usize) -> ! {
     asm!(
-        "lui sp, %hi({BOOT_STACK_TOP})",
-        "lui t0, %hi({main})",
-        "addi t0, t0, %lo({main})",
+        "mv sp, {stack_top}",
         "mv a0, {hartid}",
-        "mv a1, {device_tree_paddr}",
-        "jr t0",
-        BOOT_STACK_TOP = sym BOOT_STACK_TOP,
+        "mv a1, zero",
+        "call {main}",
+        stack_top = in(reg) stack_top,
         hartid = in(reg) hartid,
-        device_tree_paddr = in(reg) device_tree_paddr,
         main = sym rust_main,
         options(noreturn),
-    );
+    )
 }
 
 /// virtual address of the kernel
@@ -76,10 +99,14 @@ const KERNEL_PHYS_BASE: usize = 0x80000000;
 const PHY_ADDR: Address = Address::new(KERNEL_PHYS_BASE);
 
 #[inline(always)]
-fn init_page_table() {
+fn init_page_table(hartid: usize) {
     unsafe {
-        let _ = ROOT_PAGE_TABLE.map(PHY_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
-        let _ = ROOT_PAGE_TABLE.map(VIRT_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
+        if is_boot_hart(hartid) {
+            let _ =
+                ROOT_PAGE_TABLE.map(PHY_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
+            let _ =
+                ROOT_PAGE_TABLE.map(VIRT_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
+        }
         ROOT_PAGE_TABLE.active(0);
     }
 }
@@ -87,6 +114,16 @@ fn init_page_table() {
 #[no_mangle]
 #[link_section = ".pte.entry"]
 static ROOT_PAGE_TABLE: RootPageTable<Sv39> = RootPageTable::zero();
+
+static BOOT_HART: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+fn set_boot_hart(hartid: usize) {
+    let _ = BOOT_HART.compare_exchange(usize::MAX, hartid, Ordering::AcqRel, Ordering::Acquire);
+}
+
+fn is_boot_hart(hartid: usize) -> bool {
+    BOOT_HART.load(Ordering::Acquire) == hartid
+}
 
 fn init_bss() {
     extern "C" {
@@ -148,18 +185,19 @@ fn print_sections_range() {
 /// the rust entry-point of os
 #[no_mangle]
 extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
-    logging::init();
-    print_sections_range();
-    init_bss();
-    init_heap();
-    let BoardInfo {
-        smp,
-        frequency,
-        uart: _uart,
-    } = BoardInfo::parse(dtb_pa);
+    if is_boot_hart(hartid) {
+        logging::init();
+        print_sections_range();
+        init_bss();
+        init_heap();
+        let BoardInfo {
+            smp,
+            frequency,
+            uart: _uart,
+        } = BoardInfo::parse(dtb_pa);
 
-    info!(
-        r"
+        info!(
+            r"
   __  __         _  __                    _ 
  |  \/  |       | |/ /                   | |
  | \  / |_   _  | ' / ___ _ __ _ __   ___| |
@@ -174,9 +212,32 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 | timebase frequency    | {frequency:17} Hz |
 | dtb physical address  | {dtb_pa:#20x} |
 ------------------------------------------------"
-    );
+        );
+        for i in 0..smp {
+            if i != hartid {
+                let hart_stack = 0x80a00000 + 0x800000 * i;
+                sbi_rt::hart_start(i, 0x80200000, hart_stack);
+            }
+        }
 
-    sbi::shutdown();
+        for _ in 0..100_000_000 {
+            unsafe {
+                asm!("nop");
+            }
+        }
+        
+        sbi::shutdown();
+    } else {
+        info!("hart {} started", hartid);
+        loop {
+            for _ in 0..10_000_000 {
+                unsafe {
+                    asm!("nop");
+                }
+            }
+            info!("hart {} running", hartid);
+        }
+    }
 }
 
 struct BoardInfo {

@@ -3,8 +3,11 @@ use core::fmt::{self, Write};
 
 struct Stdout;
 
+static CONSOLE_LOCK: spin::Mutex<()> = spin::Mutex::new(());
+
 impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
+        let _guard = CONSOLE_LOCK.lock();
         for byte in s.bytes() {
             let ret = sbi_rt::console_write_byte(byte);
             if ret.is_err() {

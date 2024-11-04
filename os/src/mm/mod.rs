@@ -49,7 +49,7 @@ mod satp_mask {
     pub const PPN_BITS: usize = 44;
     pub const ASID_BITS: usize = 16;
     pub const MODE_BITS: usize = 4;
-    pub const PPN_MASK:  usize = (1 << PPN_BITS) - 1;
+    pub const PPN_MASK: usize = (1 << PPN_BITS) - 1;
     pub const ASID_MASK: usize = ((1 << ASID_BITS) - 1) << PPN_BITS;
     pub const MODE_MASK: usize = ((1 << MODE_BITS) - 1) << (PPN_BITS + ASID_BITS);
 }
@@ -121,7 +121,9 @@ impl<S: PageTableSpec> RootPageTable<S> {
 
     #[inline]
     pub fn satp(&self, asid: usize) -> usize {
-        const { assert!(S::MODE < 1 << 4); }
+        const {
+            assert!(S::MODE < 1 << 4);
+        }
         (S::MODE << 60) | ((asid << 44) & satp_mask::ASID_MASK) | self.ppn()
     }
 
@@ -155,16 +157,45 @@ impl<S: PageTableSpec> RootPageTable<S> {
             if !virt_addr.is_aligned::<Align1G>() || !phy_addr.is_aligned::<Align1G>() {
                 return Err(Error::AddressNotAligned);
             }
-            let vpn_2 = virt_addr.pn_2();
+            let vpn_2 = virt_addr.pn::<2>();
             let mut pte = PageTableEntry::zero();
-            pte.set_ppn_2(phy_addr.pn_2());
+            pte.set_ppn_2(phy_addr.pn::<2>());
             pte.set_flags(flags);
-            
+
             write_volatile(&mut (*self.0.get()).0[vpn_2], pte);
             return Ok(());
         }
 
         todo!()
+    }
+
+    pub fn translate<T>(&self, virt_addr: Address) -> Option<Address> {
+        let mut ppn = self.ppn();
+        let mut addr = virt_addr.as_usize();
+        for i in (0..S::LEVEL).rev() {
+            let vpn = match i {
+                0 => virt_addr.pn::<0>(),
+                1 => virt_addr.pn::<1>(),
+                2 => virt_addr.pn::<2>(),
+                3 => virt_addr.pn::<3>(),
+                4 => virt_addr.pn::<4>(),
+                _ => unreachable!(),
+            };
+            let pte = unsafe { &(*self.0.get()).0[vpn] };
+            if !pte.is_valid() {
+                return None;
+            }
+            ppn = match i {
+                0 => pte.ppn_0(),
+                1 => pte.ppn_1(),
+                2 => pte.ppn_2(),
+                3 => pte.ppn_3(),
+                4 => pte.ppn_4(),
+                _ => unreachable!(),
+            };
+            addr = (ppn << 12) | (addr & 0xfff);
+        }
+        Some(Address::new(addr))
     }
 }
 
@@ -315,28 +346,16 @@ impl<A: AlignCheck> Address<A> {
     }
 
     #[inline]
-    pub fn pn_0(&self) -> usize {
-        (self.0 & addr_mask::PN_0_MASK) >> PAGE_OFFSET_BITS
-    }
-
-    #[inline]
-    pub fn pn_1(&self) -> usize {
-        (self.0 & addr_mask::PN_1_MASK) >> (PAGE_OFFSET_BITS + PN_BITS)
-    }
-
-    #[inline]
-    pub fn pn_2(&self) -> usize {
-        (self.0 & addr_mask::PN_2_MASK) >> (PAGE_OFFSET_BITS + 2 * PN_BITS)
-    }
-
-    #[inline]
-    pub fn pn_3(&self) -> usize {
-        (self.0 & addr_mask::PN_3_MASK) >> (PAGE_OFFSET_BITS + 3 * PN_BITS)
-    }
-
-    #[inline]
-    pub fn pn_4(&self) -> usize {
-        (self.0 & addr_mask::PN_4_MASK) >> (PAGE_OFFSET_BITS + 4 * PN_BITS)
+    pub fn pn<const N: usize>(&self) -> usize {
+        const { assert!(N < 5); }
+        match N {
+            0 => (self.0 & addr_mask::PN_0_MASK) >> PAGE_OFFSET_BITS,
+            1 => (self.0 & addr_mask::PN_1_MASK) >> (PAGE_OFFSET_BITS + PN_BITS),
+            2 => (self.0 & addr_mask::PN_2_MASK) >> (PAGE_OFFSET_BITS + 2 * PN_BITS),
+            3 => (self.0 & addr_mask::PN_3_MASK) >> (PAGE_OFFSET_BITS + 3 * PN_BITS),
+            4 => (self.0 & addr_mask::PN_4_MASK) >> (PAGE_OFFSET_BITS + 4 * PN_BITS),
+            _ => unreachable!(),
+        }
     }
 
     #[inline]

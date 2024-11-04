@@ -18,6 +18,7 @@ r0 = "1.0.0"
 riscv = "0.11.1"
 sbi-rt = "0.0.3"
 slab = { version = "0.4.9", default-features = false}
+spin = "0.9.8"
 uart16550 = "0.0.1"
 [profile.release]
 debug = true

@@ -15,7 +15,11 @@
 #![no_main]
 
 use core::{
-    arch::asm, mem, ptr::addr_of, sync::atomic::{AtomicUsize, Ordering}, usize
+    arch::asm,
+    mem,
+    ptr::addr_of,
+    sync::atomic::{AtomicUsize, Ordering},
+    usize,
 };
 use log::*;
 
@@ -222,13 +226,19 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
         );
 
         for (i, (start, end)) in memory.iter().take(memory_count).enumerate() {
-            info!(r"memory region {i:10} [{start:#20x}, {end:#20x})", i = i, start = start, end = end);
+            info!(
+                r"memory region {i:10} [{start:#20x}, {end:#20x})",
+                i = i,
+                start = start,
+                end = end
+            );
             let kernel_end = KERNEL_START + 0x4000000;
             FRAME_ALLOCATOR.init(kernel_end, *end - kernel_end);
         }
 
         for i in 0..smp {
-            let frame = FRAME_ALLOCATOR.alloc::<Sv39>(0x800000)
+            let frame = FRAME_ALLOCATOR
+                .alloc::<Sv39>(0x800000)
                 .expect("failed to allocate stack frame");
             if i != hartid {
                 let hart_stack = frame.ptr.as_ptr() as usize;
@@ -242,7 +252,7 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
                 asm!("nop");
             }
         }
-        
+
         sbi::shutdown();
     } else {
         info!("hart {} started at {:#20x}", hartid, dtb_pa);

@@ -1,8 +1,11 @@
-use core::{alloc::{Layout, LayoutError}, fmt::Display, ptr::NonNull};
+use core::{
+    alloc::{Layout, LayoutError},
+    ptr::NonNull,
+};
 
 use buddy_system_allocator::LockedHeap;
 
-use super::{PageTableSpec, AlignSize};
+use super::{AlignSize, PageTableSpec};
 
 pub static FRAME_ALLOCATOR: FrameAllocator = FrameAllocator(LockedHeap::empty());
 
@@ -21,11 +24,11 @@ impl FrameAllocator {
     }
 
     pub fn alloc<S>(&self, size: usize) -> Result<Frame, Error>
-    where S: PageTableSpec
+    where
+        S: PageTableSpec,
     {
         let align = Self::fit_align_from_size::<S>(size);
-        let layout = Layout::from_size_align(size, align)
-            .map_err(Error::LayoutError)?;
+        let layout = Layout::from_size_align(size, align).map_err(Error::LayoutError)?;
         let mut heap = self.0.lock();
         heap.alloc(layout)
             .map(|ptr| Frame { ptr, layout })
@@ -37,8 +40,9 @@ impl FrameAllocator {
         heap.dealloc(frame.ptr, frame.layout);
     }
 
-    fn fit_align_from_size<S>(size: usize) -> usize 
-    where S: PageTableSpec 
+    fn fit_align_from_size<S>(size: usize) -> usize
+    where
+        S: PageTableSpec,
     {
         if size <= AlignSize::Page2M as usize / 2 {
             AlignSize::Page4K as usize

@@ -224,7 +224,9 @@ impl PageTableEntry {
 
     #[inline]
     pub const fn ppn<const N: usize>(&self) -> usize {
-        const { assert!(N < 5); }
+        const {
+            assert!(N < 5);
+        }
         match N {
             0 => self.ppn_0(),
             1 => self.ppn_1(),
@@ -237,7 +239,9 @@ impl PageTableEntry {
 
     #[inline]
     pub const fn set_ppn<const N: usize>(&mut self, ppn: usize) {
-        const { assert!(N < 5); }
+        const {
+            assert!(N < 5);
+        }
         match N {
             0 => self.set_ppn_0(ppn),
             1 => self.set_ppn_1(ppn),
@@ -373,7 +377,9 @@ impl<A: AlignCheck> Address<A> {
 
     #[inline]
     pub const fn pn<const N: usize>(&self) -> usize {
-        const { assert!(N < 5); }
+        const {
+            assert!(N < 5);
+        }
         match N {
             0 => (self.0 & addr_mask::PN_0_MASK) >> PAGE_OFFSET_BITS,
             1 => (self.0 & addr_mask::PN_1_MASK) >> (PAGE_OFFSET_BITS + PN_BITS),

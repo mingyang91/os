@@ -223,6 +223,32 @@ impl PageTableEntry {
     }
 
     #[inline]
+    pub const fn ppn<const N: usize>(&self) -> usize {
+        const { assert!(N < 5); }
+        match N {
+            0 => self.ppn_0(),
+            1 => self.ppn_1(),
+            2 => self.ppn_2(),
+            3 => self.ppn_3(),
+            4 => self.ppn_4(),
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn set_ppn<const N: usize>(&mut self, ppn: usize) {
+        const { assert!(N < 5); }
+        match N {
+            0 => self.set_ppn_0(ppn),
+            1 => self.set_ppn_1(ppn),
+            2 => self.set_ppn_2(ppn),
+            3 => self.set_ppn_3(ppn),
+            4 => self.set_ppn_4(ppn),
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
     pub const fn ppn_0(&self) -> usize {
         self.0 & pte_mask::PPN_0_MASK >> (PTE_FLAGS_BITS + RSW_BITS)
     }
@@ -346,7 +372,7 @@ impl<A: AlignCheck> Address<A> {
     }
 
     #[inline]
-    pub fn pn<const N: usize>(&self) -> usize {
+    pub const fn pn<const N: usize>(&self) -> usize {
         const { assert!(N < 5); }
         match N {
             0 => (self.0 & addr_mask::PN_0_MASK) >> PAGE_OFFSET_BITS,

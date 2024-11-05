@@ -1,15 +1,16 @@
 use core::{
     alloc::{Layout, LayoutError},
+    marker::PhantomData,
     ptr::NonNull,
 };
 
 use buddy_system_allocator::LockedHeap;
 
-use super::{AlignSize, PageTableSpec};
+use super::{AlignSize, Mode, PageTableSpec};
 
-pub static FRAME_ALLOCATOR: FrameAllocator = FrameAllocator(LockedHeap::empty());
+pub static FRAME_ALLOCATOR: FrameAllocator<Mode> = FrameAllocator(LockedHeap::empty(), PhantomData);
 
-pub struct FrameAllocator(LockedHeap<32>);
+pub struct FrameAllocator<M>(LockedHeap<32>, PhantomData<M>);
 
 #[derive(Debug)]
 pub enum Error {
@@ -17,17 +18,17 @@ pub enum Error {
     OutOfMemory,
 }
 
-impl FrameAllocator {
+impl<M> FrameAllocator<M>
+where
+    M: PageTableSpec,
+{
     pub fn init(&self, start: usize, size: usize) {
         let mut heap = self.0.lock();
         unsafe { heap.init(start, size) }
     }
 
-    pub fn alloc<S>(&self, size: usize) -> Result<Frame, Error>
-    where
-        S: PageTableSpec,
-    {
-        let align = Self::fit_align_from_size::<S>(size);
+    pub fn alloc(&self, size: usize) -> Result<Frame, Error> {
+        let align = Self::fit_align_from_size(size);
         let layout = Layout::from_size_align(size, align).map_err(Error::LayoutError)?;
         let mut heap = self.0.lock();
         heap.alloc(layout)
@@ -40,10 +41,7 @@ impl FrameAllocator {
         heap.dealloc(frame.ptr, frame.layout);
     }
 
-    fn fit_align_from_size<S>(size: usize) -> usize
-    where
-        S: PageTableSpec,
-    {
+    fn fit_align_from_size(size: usize) -> usize {
         if size <= AlignSize::Page2M as usize / 2 {
             AlignSize::Page4K as usize
         } else if size <= AlignSize::Page1G as usize / 2 {

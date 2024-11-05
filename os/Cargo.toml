@@ -20,5 +20,6 @@ sbi-rt = "0.0.3"
 slab = { version = "0.4.9", default-features = false}
 spin = "0.9.8"
 uart16550 = "0.0.1"
+virtio-drivers = "0.7.5"
 [profile.release]
 debug = true

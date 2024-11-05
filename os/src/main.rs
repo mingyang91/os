@@ -25,6 +25,7 @@ use log::*;
 
 #[macro_use]
 mod console;
+mod fs;
 mod lang_items;
 mod logging;
 mod mm;
@@ -238,7 +239,7 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 
         for i in 0..smp {
             let frame = FRAME_ALLOCATOR
-                .alloc::<Sv39>(0x800000)
+                .alloc(0x800000)
                 .expect("failed to allocate stack frame");
             if i != hartid {
                 let hart_stack = frame.ptr.as_ptr() as usize;

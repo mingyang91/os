@@ -458,3 +458,5 @@ impl PageTableSpec for Sv39 {
     const MODE: usize = 8;
     const LEVEL: usize = 3;
 }
+
+pub type Mode = Sv39;

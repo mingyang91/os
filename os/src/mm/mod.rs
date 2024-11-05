@@ -1,6 +1,10 @@
 pub mod allocator;
 
-use core::{cell::UnsafeCell, marker::PhantomData, ptr::write_volatile};
+use core::{
+    cell::UnsafeCell,
+    marker::PhantomData,
+    ptr::{write_volatile, NonNull},
+};
 
 use bitflags::bitflags;
 
@@ -395,6 +399,10 @@ impl AlignCheck for Align512G {
     const ALIGN_SIZE: usize = PAGE_SIZE << (PN_BITS * 3);
 }
 
+pub struct PhysAddr<A: AlignCheck = Unaligned>(usize, core::marker::PhantomData<A>);
+
+pub struct VirtAddr<A: AlignCheck = Unaligned>(NonNull<u8>, core::marker::PhantomData<A>);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Address<A: AlignCheck = Unaligned>(usize, core::marker::PhantomData<A>);
 
@@ -437,7 +445,7 @@ impl<A: AlignCheck> Address<A> {
     }
 
     #[inline]
-    pub fn check_alignment<T: AlignCheck>(self) -> Result<Address<A>, Error> {
+    pub fn check_alignment<T: AlignCheck>(self) -> Result<Address<T>, Error> {
         if self.is_aligned::<T>() {
             Ok(Address(self.0, PhantomData))
         } else {

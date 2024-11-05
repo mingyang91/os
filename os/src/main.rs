@@ -291,7 +291,7 @@ impl BoardInfo {
                 matches!(e, E::Misaligned(4) | E::LastCompVersion(_))
             })
         }
-        .unwrap()
+        .expect("failed to parse dtb")
         .walk(|ctx, obj| match obj {
             DtbObj::SubNode { name } => {
                 if ctx.level() == 0 && (name == b"cpus" || name == b"soc") {

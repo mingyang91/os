@@ -26,6 +26,24 @@ mod pte_mask {
         0b00000000_00000000_00111111_11100000_00000000_00000000_00000000_00000000;
     pub const PPN_4_MASK: usize =
         0b00000000_01111111_11000000_00000000_00000000_00000000_00000000_00000000;
+    pub const UNUSED_MASK: usize =
+        0b11111111_10000000_00000000_00000000_00000000_00000000_00000000_00000000;
+
+    const fn _check() {
+        const {
+            assert!(
+                FLAGS_MASK
+                    ^ RSW_MASK
+                    ^ PPN_0_MASK
+                    ^ PPN_1_MASK
+                    ^ PPN_2_MASK
+                    ^ PPN_3_MASK
+                    ^ PPN_4_MASK
+                    ^ UNUSED_MASK
+                    == usize::MAX
+            );
+        }
+    }
 }
 
 mod addr_mask {
@@ -42,6 +60,23 @@ mod addr_mask {
         0b00000000_00000000_11111111_10000000_00000000_00000000_00000000_00000000;
     pub const PN_4_MASK: usize =
         0b00000001_11111111_00000000_00000000_00000000_00000000_00000000_00000000;
+    pub const UNUSED_MASK: usize =
+        0b11111110_00000000_00000000_00000000_00000000_00000000_00000000_00000000;
+
+    fn _check() {
+        const {
+            assert!(
+                OFFSET_MASK
+                    ^ PN_0_MASK
+                    ^ PN_1_MASK
+                    ^ PN_2_MASK
+                    ^ PN_3_MASK
+                    ^ PN_4_MASK
+                    ^ UNUSED_MASK
+                    == usize::MAX
+            );
+        }
+    }
 }
 
 mod satp_mask {
@@ -52,6 +87,12 @@ mod satp_mask {
     pub const PPN_MASK: usize = (1 << PPN_BITS) - 1;
     pub const ASID_MASK: usize = ((1 << ASID_BITS) - 1) << PPN_BITS;
     pub const MODE_MASK: usize = ((1 << MODE_BITS) - 1) << (PPN_BITS + ASID_BITS);
+
+    fn _check() {
+        const {
+            assert!(PPN_MASK ^ ASID_MASK ^ MODE_MASK == usize::MAX);
+        }
+    }
 }
 
 bitflags! {

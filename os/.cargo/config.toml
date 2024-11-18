@@ -5,7 +5,9 @@ target = "riscv64gc-unknown-none-elf"
 rustflags = [
     # "-C", "linker=riscv64-unknown-elf-gcc",
     # "-C", "link-arg=-mcmodel=medany",
-    "-C", "link-arg=-Tlinker.ld",
-    "-C", "code-model=medium",
+    "-C",
+    "code-model=medium",
+    "-C",
+    "link-arg=-Tlinker.ld",
     # "-C", "relocation-model=static",
 ]

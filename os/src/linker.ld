@@ -1,53 +1,93 @@
 OUTPUT_ARCH(riscv)
+
+BASE_ADDRESS = 0xffffffc080200000;
+
 ENTRY(_start)
-MEMORY {
-    DRAM : ORIGIN = 0xffffffff80200000, LENGTH = 64M
-}
-SECTIONS {
-    /* Boot section: startup code and data needed before enabling virtual memory */
-    .text.entry : ALIGN(4K) {
-        _start = .;                            /* Entry point */
-        KEEP(*(.text.entry))                   /* Startup code */
-        KEEP(*(.rodata.entry))                 /* Read-only data needed at boot */
-        KEEP(*(.data.entry))                   /* Initialized data needed at boot */
-    } > DRAM
-
-    /* Boot stack in low physical memory */
-    .bss.entry (NOLOAD) : ALIGN(4K) {
-        *(.bss.entry)                          /* Uninitialized data for boot */
-        BOOT_STACK_TOP = .;
-    } > DRAM
-
-    .pte.entry (NOLOAD) : ALIGN(4K) {
-        *(.pte.entry)                          /* Uninitialized data for boot */
-    } > DRAM
+SECTIONS
+{
+    . = BASE_ADDRESS;
+    _skernel = .;
 
     .text : ALIGN(4K) {
-        stext = .;
-        *(.text)
-        *(.text.*)
-        etext = .;
-    } > DRAM
-    .rodata : ALIGN(4k) {
-        srodata = .;
-        *(.rodata)
-        *(.rodata.*)
-        erodata = .;
-    } > DRAM
-    .data : ALIGN(4k) {
-        sdata = .;
-        *(.data)
-        *(.data.*)
-        edata = .;
-    } > DRAM
-    .bss (NOLOAD) : ALIGN(4k) {
-        sbss = .;
-        *(.bss.uninit)
-        *(.bss)
-        *(.bss.*)
-        ebss = .;
-    } > DRAM
-    /DISCARD/ : {
-        *(.eh_frame)
+        _stext = .;
+        *(.text.boot)
+        *(.text .text.*)
+        . = ALIGN(4K);
+        _etext = .;
+    }
+
+    .rodata : ALIGN(4K) {
+        _srodata = .;
+        *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
+        *(.sdata2 .sdata2.*)
+        . = ALIGN(4K);
+        _erodata = .;
+    }
+
+    .data : ALIGN(4K) {
+        _sdata = .;
+        *(.data.boot_page_table)
+        . = ALIGN(4K);
+        *(.data .data.*)
+        *(.sdata .sdata.*)
+        *(.got .got.*)
+    }
+
+    .tdata : ALIGN(0x10) {
+        _stdata = .;
+        *(.tdata .tdata.*)
+        _etdata = .;
+    }
+
+    .tbss : ALIGN(0x10) {
+        _stbss = .;
+        *(.tbss .tbss.*)
+        *(.tcommon)
+        _etbss = .;
+    }
+
+    . = ALIGN(4K);
+    _percpu_start = .;
+    _percpu_end = _percpu_start + SIZEOF(.percpu);
+    .percpu 0x0 : AT(_percpu_start) {
+        _percpu_load_start = .;
+        *(.percpu .percpu.*)
+        _percpu_load_end = .;
+        . = _percpu_load_start + ALIGN(64) * 4;
+    }
+    . = _percpu_end;
+
+    . = ALIGN(4K);
+    _edata = .;
+
+    .bss : ALIGN(4K) {
+        boot_stack = .;
+        *(.bss.stack)
+        . = ALIGN(4K);
+        boot_stack_top = .;
+
+        _sbss = .;
+        *(.bss .bss.*)
+        *(.sbss .sbss.*)
+        *(COMMON)
+        . = ALIGN(4K);
+        _ebss = .;
+    }
+
+    _ekernel = .;
+
+	/DISCARD/ : {
+        *(.comment) *(.gnu*) *(.note*) *(.eh_frame*)
     }
 }
+
+SECTIONS {
+    linkme_IRQ : { *(linkme_IRQ) }
+    linkm2_IRQ : { *(linkm2_IRQ) }
+    linkme_PAGE_FAULT : { *(linkme_PAGE_FAULT) }
+    linkm2_PAGE_FAULT : { *(linkm2_PAGE_FAULT) }
+    linkme_SYSCALL : { *(linkme_SYSCALL) }
+    linkm2_SYSCALL : { *(linkm2_SYSCALL) }
+}
+INSERT AFTER .tbss;

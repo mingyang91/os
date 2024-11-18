@@ -34,9 +34,9 @@ mod sbi;
 #[path = "boards/qemu.rs"]
 mod board;
 
-#[allow(dead_code)]
-#[link_section = ".bss.entry"]
-static mut BOOT_STACK: [u8; 4096] = [0; 4096];
+const BOOT_STACK_SIZE: usize = 4096;
+#[link_section = ".bss.stack"]
+static mut BOOT_STACK: [u8; BOOT_STACK_SIZE] = [0; BOOT_STACK_SIZE];
 
 const KERNEL_HEAP_SIZE: usize = 128 * 1024; // 128KiB
 #[link_section = ".bss.uninit"]
@@ -58,34 +58,36 @@ use mm::{allocator::FRAME_ALLOCATOR, Address, AlignSize, RootPageTable, Sv39};
 /// # Safety
 ///
 /// 裸函数。
-// #[naked]
+#[naked]
 #[no_mangle]
-#[link_section = ".text.entry"]
-unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
-    extern "C" {
-        static BOOT_STACK_TOP: usize;
-    }
+#[link_section = ".text.boot"]
+unsafe extern "C" fn _start() -> ! {
+    core::arch::naked_asm!("
+        mv      s0, a0                  // save hartid
+        mv      s1, a1                  // save DTB pointer
+        la      sp, {boot_stack}
+        li      t0, {boot_stack_size}
+        add     sp, sp, t0              // setup boot stack
 
-    set_boot_hart(hartid);
-    init_page_table(hartid);
+        call    {init_boot_page_table}
+        call    {init_mmu}              // setup boot page table and enabel MMU
 
-    if is_boot_hart(hartid) {
-        asm!(
-            "lui sp, %hi({BOOT_STACK_TOP})",
-            "lui t0, %hi({main})",
-            "addi t0, t0, %lo({main})",
-            "mv a0, {hartid}",
-            "mv a1, {device_tree_paddr}",
-            "jr t0",
-            BOOT_STACK_TOP = sym BOOT_STACK_TOP,
-            hartid = in(reg) hartid,
-            device_tree_paddr = in(reg) device_tree_paddr,
-            main = sym rust_main,
-            options(noreturn),
-        );
-    } else {
-        _hart_start(hartid, device_tree_paddr);
-    }
+        li      s2, {phys_virt_offset}  // fix up virtual high address
+        add     sp, sp, s2
+
+        mv      a0, s0
+        mv      a1, s1
+        la      a2, {entry}
+        add     a2, a2, s2
+        jalr    a2                      // call rust_entry(hartid, dtb)
+        j       .",
+        phys_virt_offset = const PHYS_VIRT_OFFSET,
+        boot_stack_size = const BOOT_STACK_SIZE,
+        boot_stack = sym BOOT_STACK,
+        init_boot_page_table = sym init_boot_page_table,
+        init_mmu = sym init_mmu,
+        entry = sym rust_main,
+    )
 }
 
 unsafe extern "C" fn _hart_start(hartid: usize, stack_top: usize) -> ! {
@@ -102,23 +104,22 @@ unsafe extern "C" fn _hart_start(hartid: usize, stack_top: usize) -> ! {
 }
 
 /// virtual address of the kernel
-const KERNEL_VIRT_BASE: usize = 0xffffffff80000000;
+const PHYS_VIRT_OFFSET: usize = 0xffff_ffc0_0000_0000;
+const KERNEL_VIRT_BASE: usize = 0xffff_ffc0_8000_0000;
 const VIRT_ADDR: Address = Address::new(KERNEL_VIRT_BASE);
 const KERNEL_PHYS_BASE: usize = 0x80000000;
 const PHY_ADDR: Address = Address::new(KERNEL_PHYS_BASE);
 const KERNEL_START: usize = 0x80200000;
 
-#[inline(always)]
-fn init_page_table(hartid: usize) {
+fn init_boot_page_table() {
     unsafe {
-        if is_boot_hart(hartid) {
-            let _ =
-                ROOT_PAGE_TABLE.map(PHY_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
-            let _ =
-                ROOT_PAGE_TABLE.map(VIRT_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
-        }
-        ROOT_PAGE_TABLE.active(0);
+        let _ = ROOT_PAGE_TABLE.map(PHY_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
+        let _ = ROOT_PAGE_TABLE.map(VIRT_ADDR, PHY_ADDR, AlignSize::Page1G, mm::KERNEL_PTE_FLAGS);
     }
+}
+
+fn init_mmu() {
+    ROOT_PAGE_TABLE.active(0);
 }
 
 #[no_mangle]
@@ -136,13 +137,9 @@ fn is_boot_hart(hartid: usize) -> bool {
 }
 
 fn init_bss() {
-    extern "C" {
-        static sbss: u8;
-        static ebss: u8;
-    }
     unsafe {
-        let sbss_addr = &sbss as *const u8 as usize;
-        let ebss_addr = &ebss as *const u8 as usize;
+        let sbss_addr = _sbss as usize;
+        let ebss_addr = _ebss as usize;
         let bss_size = ebss_addr - sbss_addr;
         let bss_ptr = sbss_addr as *mut u8;
         core::slice::from_raw_parts_mut(bss_ptr, bss_size).fill(0);
@@ -157,59 +154,39 @@ fn init_heap() {
     }
 }
 
-macro_rules! addr_of {
-    ($symbol:ident) => {
-        (&unsafe { $symbol } as *const _) as usize
-    };
-}
-
 macro_rules! print_section_range {
     ($section_name:expr, $start:ident, $end:ident) => {
         debug!(
             "[kernel] {} [{:#20x}, {:#20x})",
-            $section_name,
-            addr_of!($start),
-            addr_of!($end)
+            $section_name, $start as usize, $end as usize
         );
     };
 }
 
 fn print_sections_range() {
-    extern "C" {
-        static stext: u8; // Start of .text section
-        static etext: u8; // End of .text section
-        static srodata: u8; // Start of .rodata section
-        static erodata: u8; // End of .rodata section
-        static sdata: u8; // Start of .data section
-        static edata: u8; // End of .data section
-        static sbss: u8; // Start of .bss section
-        static ebss: u8; // End of .bss section
-    }
-
-    print_section_range!(".text   ", stext, etext);
-    print_section_range!(".rodata ", srodata, erodata);
-    print_section_range!(".data   ", sdata, edata);
-    print_section_range!(".bss    ", sbss, ebss);
+    print_section_range!(".text   ", _stext, _etext);
+    print_section_range!(".rodata ", _srodata, _erodata);
+    print_section_range!(".data   ", _sdata, _edata);
+    print_section_range!(".bss    ", _sbss, _ebss);
 }
 
 /// the rust entry-point of os
 #[no_mangle]
 extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
-    if is_boot_hart(hartid) {
-        logging::init();
-        print_sections_range();
-        init_bss();
-        init_heap();
-        let BoardInfo {
-            smp,
-            frequency,
-            uart: _uart,
-            memory,
-            memory_count,
-        } = BoardInfo::parse(dtb_pa);
+    init_bss();
+    logging::init();
+    print_sections_range();
+    init_heap();
+    let BoardInfo {
+        smp,
+        frequency,
+        uart: _uart,
+        memory,
+        memory_count,
+    } = BoardInfo::parse(dtb_pa);
 
-        info!(
-            r"
+    info!(
+        r"
   __  __         _  __                    _ 
  |  \/  |       | |/ /                   | |
  | \  / |_   _  | ' / ___ _ __ _ __   ___| |
@@ -224,48 +201,51 @@ extern "C" fn rust_main(hartid: usize, dtb_pa: usize) -> ! {
 | timebase frequency    | {frequency:17} Hz |
 | dtb physical address  | {dtb_pa:#20x} |
 ------------------------------------------------"
+    );
+
+    for (i, (start, end)) in memory.iter().take(memory_count).enumerate() {
+        info!(
+            r"memory region {i:10} [{start:#20x}, {end:#20x})",
+            i = i,
+            start = start,
+            end = end
         );
-
-        for (i, (start, end)) in memory.iter().take(memory_count).enumerate() {
-            info!(
-                r"memory region {i:10} [{start:#20x}, {end:#20x})",
-                i = i,
-                start = start,
-                end = end
-            );
-            let kernel_end = KERNEL_START + 0x4000000;
-            FRAME_ALLOCATOR.init(kernel_end, *end - kernel_end);
-        }
-
-        for i in 0..smp {
-            let frame = FRAME_ALLOCATOR
-                .alloc(0x800000)
-                .expect("failed to allocate stack frame");
-            if i != hartid {
-                let hart_stack = frame.ptr.as_ptr() as usize;
-                sbi_rt::hart_start(i, KERNEL_START, hart_stack);
-            }
-            mem::forget(frame);
-        }
-
-        for _ in 0..100_000_000 {
-            unsafe {
-                asm!("nop");
-            }
-        }
-
-        sbi::shutdown();
-    } else {
-        info!("hart {} started at {:#20x}", hartid, dtb_pa);
-        loop {
-            for _ in 0..10_000_000 {
-                unsafe {
-                    asm!("nop");
-                }
-            }
-            info!("hart {} running", hartid);
-        }
+        let kernel_end = KERNEL_START + 0x4000000;
+        FRAME_ALLOCATOR.init(kernel_end, *end - kernel_end);
     }
+
+    // for i in 0..smp {
+    //     let frame = FRAME_ALLOCATOR
+    //         .alloc(0x800000)
+    //         .expect("failed to allocate stack frame");
+    //     if i != hartid {
+    //         let hart_stack = frame.ptr.as_ptr() as usize;
+    //         sbi_rt::hart_start(i, KERNEL_START, hart_stack);
+    //     }
+    //     mem::forget(frame);
+    // }
+
+    // for _ in 0..100_000_000 {
+    //     unsafe {
+    //         asm!("nop");
+    //     }
+    // }
+
+    sbi::shutdown();
+}
+
+extern "C" {
+    fn _stext();
+    fn _etext();
+    fn _srodata();
+    fn _erodata();
+    fn _sdata();
+    fn _edata();
+    fn _sbss();
+    fn _ebss();
+    fn _ekernel();
+    fn boot_stack();
+    fn boot_stack_top();
 }
 
 struct BoardInfo {

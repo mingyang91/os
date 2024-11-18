@@ -1,3 +1,4 @@
+pub mod exfat;
 pub mod virtio_blk;
 
 use core::fmt::{Display, Formatter};
